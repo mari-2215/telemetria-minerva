@@ -61,7 +61,11 @@ class _MinervaTelemetryAppState extends State<MinervaTelemetryApp> {
       title: 'Telemetria Minerva',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF075985), brightness: Brightness.dark),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0284C7), brightness: Brightness.dark),
+        scaffoldBackgroundColor: const Color(0xFF020B1C),
+        cardTheme: const CardThemeData(color: Color(0xFF071A33), elevation: 2),
+        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF03152C), surfaceTintColor: Colors.transparent),
+        navigationBarTheme: const NavigationBarThemeData(backgroundColor: Color(0xFF03152C)),
         useMaterial3: true,
       ),
       home: _loading
@@ -72,4 +76,3 @@ class _MinervaTelemetryAppState extends State<MinervaTelemetryApp> {
     );
   }
 }
-

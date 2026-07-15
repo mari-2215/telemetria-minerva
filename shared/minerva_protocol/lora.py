@@ -41,15 +41,16 @@ def encode_lora_payload(telemetry: Telemetry) -> bytes:
     power = value.get("power") or {}
     environment = value.get("environment") or {}
     propulsion = value.get("propulsion") or {}
+    control = value.get("control") or {}
     alarms = set((value.get("status") or {}).get("alarms") or [])
     flags = 0
     if position.get("fix", 0) and "latitude_deg" in position and "longitude_deg" in position:
         flags |= FLAG_GPS_VALID
     if environment.get("water_detected"):
         flags |= FLAG_WATER_DETECTED
-    if propulsion.get("rc_healthy"):
+    if control.get("rc_healthy", propulsion.get("rc_healthy")):
         flags |= FLAG_RC_HEALTHY
-    if propulsion.get("failsafe_active"):
+    if control.get("failsafe_active", propulsion.get("failsafe_active")):
         flags |= FLAG_FAILSAFE_ACTIVE
     if "electronics_temp_c" in environment or "humidity_pct" in environment:
         flags |= FLAG_ENVIRONMENT_VALID
@@ -158,4 +159,3 @@ def decode_base64_lora_payload(value: str, boat_id: str, **link: float | None) -
     except (ValueError, TypeError) as exc:
         raise TelemetryValidationError("invalid base64 LoRa payload") from exc
     return decode_lora_payload(raw, boat_id, **link)
-

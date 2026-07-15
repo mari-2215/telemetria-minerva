@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/minerva_logo.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.onLogin});
   final Future<void> Function(String server, String token) onLogin;
@@ -47,9 +49,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.sailing, size: 56),
+                    const Center(child: MinervaLogo()),
                     const SizedBox(height: 16),
-                    Text('Telemetria Minerva', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
+                    Text('Telemetria e Piloto Automático', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
                     const SizedBox(height: 24),
                     TextField(controller: _server, decoration: const InputDecoration(labelText: 'Servidor', border: OutlineInputBorder())),
                     const SizedBox(height: 12),
@@ -67,4 +69,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

@@ -33,6 +33,24 @@ Nao usar o pequeno LM2596 do desenho para alimentar o Raspberry Pi junto com rad
 
 Adicionar fusivel proprio, protecao contra inversao, TVS, filtro e desligamento limpo. O circuito de propulsao deve ficar separado da alimentacao logica tanto quanto praticavel.
 
+## Pinagem do firmware integrado
+
+| Funcao | Mega 2560 |
+| --- | --- |
+| CH1 leme | D2, interrupcao externa |
+| CH2 acelerador | D3, interrupcao externa |
+| CH3 modo | D18, interrupcao externa |
+| Servo azimutal 1 | D9 |
+| ESC | D10 |
+| Servo azimutal 2 | D11 |
+| GPS TX -> Mega RX2 | D17 |
+| GPS RX <- Mega TX2 | D16 |
+| ADXL345 | SDA D20 / SCL D21 |
+| LM35 / ACS712 / tensao | A0 / A3 / A4 |
+| DHT11 / sensor de agua | D22 / D23 |
+
+O GPS precisa estar na `Serial2`, pois D18 passou a ser o canal de modo. Raspberry e Mega conversam por USB a 115200 baud. Servo e ESC usam fonte/BEC propria; somente os GNDs ficam em comum.
+
 ## Melhorias recomendadas nos sensores
 
 - adicionar sensor de agua no casco em pelo menos dois pontos;
@@ -56,4 +74,3 @@ Adicionar fusivel proprio, protecao contra inversao, TVS, filtro e desligamento 
 - Anatel - Ato 14448/2017 e atualizacoes: https://informacoes.anatel.gov.br/legislacao/atos-de-certificacao-de-produtos/2017/1139-ato-14451
 - Arduino Mega 2560: https://docs.arduino.cc/hardware/mega-2560
 - Raspberry Pi - alimentacao: https://www.raspberrypi.com/documentation/computers/getting-started.html
-

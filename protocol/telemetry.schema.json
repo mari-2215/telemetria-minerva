@@ -55,9 +55,40 @@
       "type": "object",
       "properties": {
         "pod_angle_deg": { "type": "number", "minimum": 0, "maximum": 270 },
+        "target_pod_angle_deg": { "type": "number", "minimum": 0, "maximum": 270 },
+        "rudder_norm": { "type": "number", "minimum": -1, "maximum": 1 },
         "throttle_norm": { "type": "number", "minimum": -1, "maximum": 1 },
+        "servo1_pwm_us": { "type": "integer", "minimum": 400, "maximum": 2600 },
+        "servo2_pwm_us": { "type": "integer", "minimum": 400, "maximum": 2600 },
+        "esc_pwm_us": { "type": "integer", "minimum": 800, "maximum": 2200 },
         "rc_healthy": { "type": "boolean" },
         "failsafe_active": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "control": {
+      "type": "object",
+      "properties": {
+        "mode": { "enum": ["manual", "record", "auto", "failsafe"] },
+        "recording_active": { "type": "boolean" },
+        "rc_healthy": { "type": "boolean" },
+        "failsafe_active": { "type": "boolean" },
+        "rudder_pwm_us": { "type": "integer", "minimum": 0, "maximum": 2500 },
+        "throttle_pwm_us": { "type": "integer", "minimum": 0, "maximum": 2500 },
+        "mode_pwm_us": { "type": "integer", "minimum": 0, "maximum": 2500 }
+      },
+      "additionalProperties": false
+    },
+    "autopilot": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "command_fresh": { "type": "boolean" },
+        "last_command_sequence": { "type": "integer", "minimum": 0 },
+        "command_age_ms": { "type": "integer", "minimum": 0 },
+        "target_pod_deg": { "type": "number", "minimum": 0, "maximum": 270 },
+        "mission_id": { "type": "string", "maxLength": 32 },
+        "waypoint_index": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -82,4 +113,3 @@
   },
   "additionalProperties": false
 }
-

@@ -17,6 +17,7 @@ class MessageType(IntEnum):
     EVENT = 2
     HEARTBEAT = 3
     ACK = 4
+    AUTOPILOT_COMMAND = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,4 +114,3 @@ class FrameDecoder:
             del self._buffer[:frame_length]
 
         return frames
-

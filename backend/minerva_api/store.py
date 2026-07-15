@@ -45,6 +45,20 @@ class TelemetryStore:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_active_unique
                 ON alerts(boat_id, code) WHERE resolved_at IS NULL;
             CREATE INDEX IF NOT EXISTS idx_alerts_active ON alerts(resolved_at, last_seen DESC);
+            CREATE TABLE IF NOT EXISTS missions (
+                mission_id TEXT PRIMARY KEY,
+                boat_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                cruise_throttle REAL NOT NULL,
+                waypoints TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_error TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_missions_boat_status
+                ON missions(boat_id, status, created_at DESC);
             """
         )
 
@@ -146,6 +160,91 @@ class TelemetryStore:
                 (acknowledged_at, actor, alert_id),
             )
             return cursor.rowcount == 1
+
+    def create_mission(self, mission: dict[str, Any], actor: str, now: str) -> dict[str, Any]:
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO missions(
+                    mission_id, boat_id, name, status, cruise_throttle,
+                    waypoints, created_at, created_by, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    mission["mission_id"],
+                    mission["boat_id"],
+                    mission["name"],
+                    mission["status"],
+                    mission["cruise_throttle"],
+                    json.dumps(mission["waypoints"], separators=(",", ":")),
+                    now,
+                    actor,
+                    now,
+                ),
+            )
+        created = self.mission(mission["mission_id"])
+        assert created is not None
+        return created
+
+    @staticmethod
+    def _mission_row(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        value["waypoints"] = json.loads(value["waypoints"])
+        return value
+
+    def mission(self, mission_id: str) -> dict[str, Any] | None:
+        row = self._connection.execute("SELECT * FROM missions WHERE mission_id = ?", (mission_id,)).fetchone()
+        return self._mission_row(row) if row else None
+
+    def missions(self, boat_id: str | None = None, mission_status: str | None = None) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        values: list[Any] = []
+        if boat_id:
+            clauses.append("boat_id = ?")
+            values.append(boat_id)
+        if mission_status:
+            clauses.append("status = ?")
+            values.append(mission_status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._connection.execute(
+            f"SELECT * FROM missions {where} ORDER BY created_at DESC", values
+        ).fetchall()
+        return [self._mission_row(row) for row in rows]
+
+    def pending_mission(self, boat_id: str) -> dict[str, Any] | None:
+        row = self._connection.execute(
+            "SELECT * FROM missions WHERE boat_id = ? AND status = 'pending' ORDER BY updated_at LIMIT 1",
+            (boat_id,),
+        ).fetchone()
+        return self._mission_row(row) if row else None
+
+    def activate_mission(self, mission_id: str, now: str) -> dict[str, Any] | None:
+        mission = self.mission(mission_id)
+        if mission is None:
+            return None
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                UPDATE missions SET status = 'cancelled', updated_at = ?
+                WHERE boat_id = ? AND status IN ('pending', 'active') AND mission_id != ?
+                """,
+                (now, mission["boat_id"], mission_id),
+            )
+            self._connection.execute(
+                "UPDATE missions SET status = 'pending', updated_at = ?, last_error = NULL WHERE mission_id = ?",
+                (now, mission_id),
+            )
+        return self.mission(mission_id)
+
+    def update_mission_status(
+        self, mission_id: str, mission_status: str, now: str, error: str | None = None
+    ) -> dict[str, Any] | None:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "UPDATE missions SET status = ?, updated_at = ?, last_error = ? WHERE mission_id = ?",
+                (mission_status, now, error[:500] if error else None, mission_id),
+            )
+        return self.mission(mission_id) if cursor.rowcount == 1 else None
 
     def close(self) -> None:
         self._connection.close()

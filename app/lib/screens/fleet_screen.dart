@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../widgets/minerva_logo.dart';
 import 'telemetry_screen.dart';
 
 class FleetScreen extends StatefulWidget {
@@ -28,7 +29,7 @@ class _FleetScreenState extends State<FleetScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Frota Minerva'),
+        title: const MinervaLogo(compact: true),
         actions: [IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)), IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout))],
       ),
       body: FutureBuilder<List<BoatSummary>>(
@@ -63,4 +64,3 @@ class _FleetScreenState extends State<FleetScreen> {
     );
   }
 }
-

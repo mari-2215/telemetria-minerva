@@ -13,6 +13,7 @@ from .service import BoatTelemetryService
 from .store import OutboxStore
 from .uplink import HttpOutboxUploader
 from .rak3172 import LoRaOutboxUploader, Rak3172Modem
+from .autopilot import HttpMissionClient, MissionAutopilot, MissionSyncError
 
 
 def main() -> None:
@@ -22,6 +23,7 @@ def main() -> None:
     parser.add_argument("--database", default=os.getenv("MINERVA_EDGE_DB", "/var/lib/minerva-telemetry/outbox.db"))
     parser.add_argument("--api", default=os.getenv("MINERVA_API_URL"))
     parser.add_argument("--device-token", default=os.getenv("MINERVA_DEVICE_TOKEN"))
+    parser.add_argument("--boat-id", default=os.getenv("MINERVA_BOAT_ID", "azimutal-01"))
     parser.add_argument("--lora-serial", default=os.getenv("MINERVA_LORA_SERIAL"))
     parser.add_argument("--lora-dev-eui", default=os.getenv("MINERVA_LORA_DEV_EUI"))
     parser.add_argument("--lora-app-eui", default=os.getenv("MINERVA_LORA_APP_EUI"))
@@ -38,6 +40,8 @@ def main() -> None:
     store = OutboxStore(args.database)
     service = BoatTelemetryService(store)
     uploader = HttpOutboxUploader(store, args.api, args.device_token) if args.api and args.device_token else None
+    mission_client = HttpMissionClient(args.api, args.device_token) if args.api and args.device_token else None
+    autopilot = MissionAutopilot(store, args.boat_id, mission_client)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -62,6 +66,17 @@ def main() -> None:
                 if chunk:
                     service.ingest_serial_bytes(chunk)
                 now = time.monotonic()
+                try:
+                    if autopilot.poll_remote(now):
+                        logging.info("nova missao salva e ativada para %s", args.boat_id)
+                except MissionSyncError as exc:
+                    logging.warning("sincronizacao de missao indisponivel: %s", exc)
+                try:
+                    command = autopilot.build_command(service.last_telemetry, now)
+                    if command:
+                        port.write(command)
+                except (MissionSyncError, ValueError) as exc:
+                    logging.error("comando de piloto automatico rejeitado localmente: %s", exc)
                 if uploader and now - last_flush >= 1.0:
                     outcome = uploader.flush(limit=50)
                     if outcome.sent or outcome.failed:

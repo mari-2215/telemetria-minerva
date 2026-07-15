@@ -5,11 +5,12 @@ import hmac
 import os
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from minerva_protocol import Telemetry, TelemetryValidationError, decode_base64_lora_payload
+from minerva_protocol import Mission, MissionValidationError, Telemetry, TelemetryValidationError, decode_base64_lora_payload
 
 from .store import TelemetryStore
 from .auth import Principal, authenticate_token, current_principal, require_roles
@@ -63,6 +64,11 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
     def current_store(request: Request) -> TelemetryStore:
         return request.app.state.store
 
+    def require_device_token(x_device_token: str | None) -> None:
+        expected = os.getenv("MINERVA_DEVICE_TOKEN", "dev-device-token")
+        if not x_device_token or not hmac.compare_digest(x_device_token, expected):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid device token")
+
     @app.get("/healthz")
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -74,9 +80,7 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         x_device_token: str | None = Header(default=None),
         telemetry_store: TelemetryStore = Depends(current_store),
     ) -> dict[str, Any]:
-        expected = os.getenv("MINERVA_DEVICE_TOKEN", "dev-device-token")
-        if not x_device_token or not hmac.compare_digest(x_device_token, expected):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid device token")
+        require_device_token(x_device_token)
         try:
             telemetry = Telemetry.from_dict(payload)
         except TelemetryValidationError as exc:
@@ -156,6 +160,92 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         if not acknowledged:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="active alert not found")
         return {"acknowledged": True}
+
+    @app.post("/v1/missions", status_code=status.HTTP_201_CREATED)
+    def create_mission(
+        payload: dict[str, Any],
+        principal: Principal = Depends(require_roles("admin", "operator", "laboratory")),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        candidate = dict(payload)
+        candidate["mission_id"] = candidate.get("mission_id") or uuid4().hex[:12]
+        candidate["status"] = "draft"
+        try:
+            mission = Mission.from_dict(candidate)
+        except MissionValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        try:
+            return telemetry_store.create_mission(mission.to_dict(), principal.name, Telemetry.utc_now())
+        except Exception as exc:
+            if "UNIQUE constraint failed" in str(exc):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="mission_id already exists") from exc
+            raise
+
+    @app.get("/v1/missions", dependencies=[Depends(current_principal)])
+    def missions(
+        boat_id: str | None = Query(default=None),
+        mission_status: str | None = Query(default=None, alias="status"),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> list[dict[str, Any]]:
+        return telemetry_store.missions(boat_id, mission_status)
+
+    @app.post("/v1/missions/{mission_id}/activate")
+    def activate_mission(
+        mission_id: str,
+        _: Principal = Depends(require_roles("admin", "operator", "laboratory")),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        mission = telemetry_store.activate_mission(mission_id, Telemetry.utc_now())
+        if mission is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
+        return mission
+
+    @app.get("/v1/boats/{boat_id}/missions/pending")
+    def pending_mission(
+        boat_id: str,
+        x_device_token: str | None = Header(default=None),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any] | None:
+        require_device_token(x_device_token)
+        return telemetry_store.pending_mission(boat_id)
+
+    @app.post("/v1/boats/{boat_id}/recordings", status_code=status.HTTP_201_CREATED)
+    def upload_recording(
+        boat_id: str,
+        payload: dict[str, Any],
+        x_device_token: str | None = Header(default=None),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        require_device_token(x_device_token)
+        candidate = dict(payload)
+        candidate["boat_id"] = boat_id
+        candidate["status"] = "draft"
+        try:
+            mission = Mission.from_dict(candidate)
+        except MissionValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        existing = telemetry_store.mission(mission.mission_id)
+        if existing is not None:
+            return existing
+        return telemetry_store.create_mission(mission.to_dict(), f"boat:{boat_id}", Telemetry.utc_now())
+
+    @app.post("/v1/missions/{mission_id}/status")
+    def set_mission_status(
+        mission_id: str,
+        payload: dict[str, Any],
+        x_device_token: str | None = Header(default=None),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        require_device_token(x_device_token)
+        mission_status = payload.get("status")
+        if mission_status not in {"active", "completed", "cancelled", "failed"}:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="invalid mission status")
+        result = telemetry_store.update_mission_status(
+            mission_id, mission_status, Telemetry.utc_now(), payload.get("error")
+        )
+        if result is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
+        return result
 
     @app.websocket("/v1/ws/boats/{boat_id}")
     async def stream(websocket: WebSocket, boat_id: str, token: str = Query()) -> None:

@@ -6,11 +6,11 @@
 2. O Raspberry Pi processa, registra e transporta dados, mas nao e necessario para manter o motor seguro.
 3. Toda amostra recebe `boat_id`, sequencia, horario monotonicamente crescente e qualidade.
 4. Toda fila de saida e persistente: perda de internet nao perde o ensaio.
-5. O aplicativo e observador. Comandos remotos ficam desabilitados no MVP.
+5. O aplicativo cria missoes, mas a propulsao autonoma so e liberada pelo canal CH3 fisico e por comandos com validade curta.
 
 ## Bordo
 
-O Arduino Mega mantem o controle azimutal e le os sensores. A ligacao recomendada ao Raspberry Pi e USB, evitando ligar UART de 5 V diretamente aos GPIO de 3,3 V do Pi. O firmware publica um quadro binario ou CBOR a 10 Hz com CRC-16. O Pi agrega as amostras, executa filtros, calcula grandezas derivadas e salva tudo em SQLite antes de transmitir.
+O Arduino Mega mantem o controle azimutal, le os sensores e aplica a prioridade de seguranca. A ligacao recomendada ao Raspberry Pi e USB, evitando ligar UART de 5 V diretamente aos GPIO de 3,3 V do Pi. O firmware publica MinervaFrame v1 com CRC-16. No modo AUTO, o Pi devolve comandos tipo 5 com validade maxima de 1 segundo. O Pi salva telemetria e missoes em SQLite antes de transmitir ou executar.
 
 Taxas sugeridas:
 
@@ -47,7 +47,7 @@ O gateway recebe LoRa e envia os pacotes ao backend. Se a internet cair, guarda 
 
 ## Aplicativo
 
-Um unico projeto Flutter atende Android, iOS e navegador. Telas do MVP:
+Um unico projeto Flutter atende Android, iOS e navegador. Telas:
 
 1. login e selecao de embarcacao;
 2. mapa com trilha, velocidade e qualidade do enlace;
@@ -55,12 +55,13 @@ Um unico projeto Flutter atende Android, iOS e navegador. Telas do MVP:
 4. alarmes com confirmacao e linha do tempo;
 5. lista de ensaios e replay;
 6. exportacao CSV/JSON;
-7. diagnostico de sensores e versoes de firmware.
+7. diagnostico de sensores e versoes de firmware;
+8. planejamento e ativacao de trajetorias por waypoints;
+9. atitude do barco derivada do ADXL345.
 
 ## Operacao degradada
 
 - Sem LoRa: o Pi continua gravando e tenta retransmitir.
 - Sem internet na margem: usuarios locais acessam o gateway; sincronizacao ocorre depois.
-- Sem Raspberry Pi: Arduino mantem controle e fail-safe, mas nao ha telemetria.
+- Sem Raspberry Pi: Arduino mantem MANUAL/RECORD e o fail-safe; AUTO para o ESC pelo watchdog.
 - Sem aplicativo: nada muda no controle do barco.
-

@@ -6,6 +6,8 @@ import 'package:latlong2/latlong.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../widgets/boat_attitude_view.dart';
+import 'mission_planner_screen.dart';
 
 class TelemetryScreen extends StatefulWidget {
   const TelemetryScreen({super.key, required this.client, required this.boatId});
@@ -56,15 +58,27 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   Widget _metric(String label, String value, IconData icon) => Card(
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child: Column(children: [Icon(icon), const SizedBox(height: 8), Text(value, style: Theme.of(context).textTheme.titleLarge), Text(label)]),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon), const SizedBox(height: 8), Text(value, style: Theme.of(context).textTheme.titleLarge), Text(label)]),
         ),
       );
+
+  void _openPlanner() {
+    final telemetry = _telemetry;
+    final position = telemetry?.latitude != null && telemetry?.longitude != null ? LatLng(telemetry!.latitude!, telemetry.longitude!) : null;
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => MissionPlannerScreen(client: widget.client, boatId: widget.boatId, initialPosition: position)));
+  }
 
   @override
   Widget build(BuildContext context) {
     final telemetry = _telemetry;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.boatId), actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))]),
+      appBar: AppBar(
+        title: Text(widget.boatId),
+        actions: [
+          IconButton(onPressed: _openPlanner, tooltip: 'Planejar rota', icon: const Icon(Icons.route)),
+          IconButton(onPressed: _load, tooltip: 'Atualizar', icon: const Icon(Icons.refresh)),
+        ],
+      ),
       body: telemetry == null
           ? Center(child: _error == null ? const CircularProgressIndicator() : Text('Falha: $_error'))
           : ListView(
@@ -81,28 +95,60 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                     _metric('Bateria', _number(telemetry.power, 'battery_v', 'V'), Icons.battery_charging_full),
                     _metric('Corrente', _number(telemetry.power, 'current_a', 'A'), Icons.electric_bolt),
                     _metric('Velocidade', _number(telemetry.position, 'speed_mps', 'm/s'), Icons.speed),
-                    _metric('Angulo do pod', _number(telemetry.propulsion, 'pod_angle_deg', 'graus'), Icons.navigation),
-                    _metric('Temperatura', _number(telemetry.environment, 'electronics_temp_c', 'C'), Icons.thermostat),
-                    _metric('RSSI', _number(telemetry.link, 'rssi_dbm', 'dBm', decimals: 0), Icons.network_cell),
+                    _metric('Ângulo do pod', _number(telemetry.propulsion, 'pod_angle_deg', 'graus'), Icons.navigation),
+                    _metric('Temperatura', _number(telemetry.environment, 'electronics_temp_c', '°C'), Icons.thermostat),
+                    _metric('Modo', telemetry.controlMode.toUpperCase(), Icons.tune),
                   ],
                 ),
                 const SizedBox(height: 12),
+                BoatAttitudeView(rollDeg: telemetry.rollDeg, pitchDeg: telemetry.pitchDeg),
+                const SizedBox(height: 12),
                 if (telemetry.latitude != null && telemetry.longitude != null)
                   SizedBox(
-                    height: 360,
+                    height: 390,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      child: FlutterMap(
-                        options: MapOptions(initialCenter: LatLng(telemetry.latitude!, telemetry.longitude!), initialZoom: 15),
+                      child: Stack(
                         children: [
-                          TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'br.org.minervanautica.telemetria'),
-                          MarkerLayer(markers: [Marker(point: LatLng(telemetry.latitude!, telemetry.longitude!), width: 48, height: 48, child: const Icon(Icons.sailing, size: 42, color: Colors.cyanAccent))]),
+                          FlutterMap(
+                            options: MapOptions(initialCenter: LatLng(telemetry.latitude!, telemetry.longitude!), initialZoom: 15),
+                            children: [
+                              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'br.org.minervanautica.telemetria'),
+                              MarkerLayer(markers: [
+                                Marker(
+                                  point: LatLng(telemetry.latitude!, telemetry.longitude!),
+                                  width: 54,
+                                  height: 54,
+                                  child: Container(
+                                    decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black54)]),
+                                    child: const Icon(Icons.sailing, size: 34, color: Colors.white),
+                                  ),
+                                ),
+                              ]),
+                            ],
+                          ),
+                          Positioned(
+                            left: 10,
+                            top: 10,
+                            child: Card(
+                              color: const Color(0xE6020617),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                child: Text(
+                                  'LAT  ${telemetry.latitude!.toStringAsFixed(6)}\nLON ${telemetry.longitude!.toStringAsFixed(6)}\nTEMP ${telemetry.temperatureC?.toStringAsFixed(1) ?? '--'} °C',
+                                  style: const TextStyle(fontFamily: 'monospace', color: Colors.white, height: 1.45),
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ),
+                  )
+                else
+                  const Card(child: ListTile(leading: Icon(Icons.gps_off), title: Text('GPS sem posição válida'), subtitle: Text('O mapa aparece assim que o NEO-6M obtiver fix.'))),
                 const SizedBox(height: 8),
-                Text('Pacote ${telemetry.sequence} - ${telemetry.recordedAt.toLocal()}', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+                Text('Pacote ${telemetry.sequence} · ${telemetry.recordedAt.toLocal()}', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
     );

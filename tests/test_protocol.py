@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from minerva_protocol import Frame, FrameDecoder, MessageType, crc16_ccitt, encode_frame
+from minerva_protocol import AutopilotCommand, Frame, FrameDecoder, MessageType, crc16_ccitt, encode_frame
 
 
 class FrameProtocolTest(unittest.TestCase):
@@ -26,7 +26,12 @@ class FrameProtocolTest(unittest.TestCase):
         self.assertEqual(frames, [valid])
         self.assertEqual(decoder.crc_errors, 1)
 
+    def test_autopilot_command_uses_message_type_five(self) -> None:
+        encoded = AutopilotCommand(7, 62.5, 0.4, 500, "rota-01", 2).to_frame(1234)
+        frame = FrameDecoder().feed(encoded)[0]
+        self.assertEqual(frame.message_type, MessageType.AUTOPILOT_COMMAND)
+        self.assertEqual(json.loads(frame.payload)["mission_id"], "rota-01")
+
 
 if __name__ == "__main__":
     unittest.main()
-

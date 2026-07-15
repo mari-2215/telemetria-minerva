@@ -20,6 +20,7 @@ class BoatTelemetryService:
         self.store = store
         self.decoder = FrameDecoder()
         self.stats = ServiceStats()
+        self.last_telemetry: Telemetry | None = None
 
     def ingest_serial_bytes(self, data: bytes) -> int:
         accepted_now = 0
@@ -36,6 +37,8 @@ class BoatTelemetryService:
                 normalized = dict(telemetry.data)
                 normalized["recorded_at"] = Telemetry.utc_now()
                 telemetry = Telemetry.from_dict(normalized)
+            self.last_telemetry = telemetry
+            self.store.capture_recording(telemetry)
             if self.store.append(telemetry):
                 self.stats.accepted += 1
                 accepted_now += 1

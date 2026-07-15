@@ -66,3 +66,67 @@ def test_roles_and_alert_acknowledgement(monkeypatch):
             assert client.get("/v1/me", headers=lab_headers).json() == {"name": "Lab", "role": "laboratory"}
             assert client.post(f"/v1/alerts/{alerts[0]['id']}/ack", headers=lab_headers).json() == {"acknowledged": True}
         store.close()
+
+
+def test_mission_create_activate_and_boat_download():
+    with tempfile.TemporaryDirectory() as directory:
+        store = TelemetryStore(Path(directory) / "backend.db")
+        with TestClient(create_app(store)) as client:
+            headers = {"Authorization": "Bearer dev-viewer-token"}
+            payload = {
+                "boat_id": "azimutal-01",
+                "name": "Volta de teste",
+                "cruise_throttle": 0.4,
+                "waypoints": [
+                    {"latitude_deg": -22.8, "longitude_deg": -43.2, "tolerance_m": 6},
+                    {"latitude_deg": -22.8005, "longitude_deg": -43.2005, "tolerance_m": 6},
+                ],
+            }
+            created = client.post("/v1/missions", json=payload, headers=headers)
+            assert created.status_code == 201
+            mission_id = created.json()["mission_id"]
+            assert created.json()["status"] == "draft"
+            activated = client.post(f"/v1/missions/{mission_id}/activate", headers=headers)
+            assert activated.json()["status"] == "pending"
+            pending = client.get(
+                "/v1/boats/azimutal-01/missions/pending",
+                headers={"X-Device-Token": "dev-device-token"},
+            )
+            assert pending.json()["waypoints"][1]["latitude_deg"] == -22.8005
+            active = client.post(
+                f"/v1/missions/{mission_id}/status",
+                json={"status": "active"},
+                headers={"X-Device-Token": "dev-device-token"},
+            )
+            assert active.json()["status"] == "active"
+            listed = client.get("/v1/missions?boat_id=azimutal-01", headers=headers).json()
+            assert listed[0]["name"] == "Volta de teste"
+        store.close()
+
+
+def test_boat_uploads_recorded_route_as_draft():
+    with tempfile.TemporaryDirectory() as directory:
+        store = TelemetryStore(Path(directory) / "backend.db")
+        with TestClient(create_app(store)) as client:
+            recording = {
+                "mission_id": "rec-azimutal-01-10",
+                "boat_id": "ignored-by-server",
+                "name": "Trajeto gravado",
+                "cruise_throttle": 0.35,
+                "waypoints": [{"latitude_deg": -22.8, "longitude_deg": -43.2, "tolerance_m": 8}],
+            }
+            response = client.post(
+                "/v1/boats/azimutal-01/recordings",
+                json=recording,
+                headers={"X-Device-Token": "dev-device-token"},
+            )
+            assert response.status_code == 201
+            assert response.json()["boat_id"] == "azimutal-01"
+            assert response.json()["status"] == "draft"
+            duplicate = client.post(
+                "/v1/boats/azimutal-01/recordings",
+                json=recording,
+                headers={"X-Device-Token": "dev-device-token"},
+            )
+            assert duplicate.json()["mission_id"] == "rec-azimutal-01-10"
+        store.close()

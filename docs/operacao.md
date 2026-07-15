@@ -29,6 +29,7 @@ Exemplo de `/etc/minerva-telemetry/boat.env`:
 ```dotenv
 MINERVA_SERIAL_PORT=/dev/ttyACM0
 MINERVA_SERIAL_BAUD=115200
+MINERVA_BOAT_ID=azimutal-01
 MINERVA_EDGE_DB=/var/lib/minerva-telemetry/outbox.db
 MINERVA_API_URL=https://telemetria.exemplo.org
 MINERVA_DEVICE_TOKEN=segredo-exclusivo-do-barco
@@ -39,6 +40,8 @@ MINERVA_LORA_APP_KEY=00112233445566778899AABBCCDDEEFF
 ```
 
 As chaves OTAA nunca entram no Git. O RAK3172 e configurado como LoRaWAN Class A, OTAA, ADR e AU915. A mascara de canais deve coincidir com o gateway/servidor escolhido e respeitar a faixa autorizada.
+
+A Raspberry consulta uma missao pendente a cada 5 segundos quando existe acesso IP ao backend. Depois do download, a rota fica no SQLite local e continua sendo executada sem internet. O transporte de rotas completas por downlink LoRaWAN ainda nao faz parte deste driver: LoRaWAN permanece como uplink de telemetria/alarmes, e o envio da missao usa Wi-Fi, Ethernet ou 4G.
 
 ## ChirpStack
 
@@ -58,7 +61,7 @@ flutter pub get
 flutter run
 ```
 
-No primeiro acesso, informar a URL da API e um token de equipe/laboratorio. Para producao, distribuir tokens individuais e revoga-los pela configuracao `MINERVA_ACCESS_TOKENS_JSON`. Uma fase posterior pode substituir esse mecanismo por OIDC institucional sem alterar os endpoints de telemetria.
+No primeiro acesso, informar a URL da API e um token de equipe/laboratorio. Abra um barco e toque no icone de rota para marcar waypoints, ajustar a potencia de cruzeiro e enviar. Para producao, distribuir tokens individuais e revoga-los pela configuracao `MINERVA_ACCESS_TOKENS_JSON`. Uma fase posterior pode substituir esse mecanismo por OIDC institucional sem alterar os endpoints de telemetria.
 
 ## Backup
 

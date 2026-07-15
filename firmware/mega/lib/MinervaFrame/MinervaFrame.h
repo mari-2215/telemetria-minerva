@@ -12,6 +12,7 @@ enum class MessageType : uint8_t {
   Event = 2,
   Heartbeat = 3,
   Ack = 4,
+  AutopilotCommand = 5,
 };
 
 uint16_t crc16Ccitt(const uint8_t* data, size_t length, uint16_t initial = 0xFFFF);
@@ -25,4 +26,3 @@ bool writeFrame(
     uint16_t payloadLength);
 
 }  // namespace minerva
-

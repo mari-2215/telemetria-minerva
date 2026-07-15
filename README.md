@@ -6,20 +6,21 @@ Plataforma de telemetria para os modelos navais da Minerva Nautica, com cobertur
 
 - coleta no Arduino Mega dos sensores e estados do controle azimutal;
 - processamento, armazenamento e reenvio no Raspberry Pi embarcado;
+- gravacao de trajetorias e piloto automatico por waypoints, liberado somente pela chave fisica do radio;
 - enlace LoRa/LoRaWAN em 915-928 MHz entre barco e margem;
 - gateway de margem com internet por Ethernet, Wi-Fi ou 4G;
 - backend com autenticacao, historico, alertas e tempo real;
 - aplicativo Flutter para Android, iOS e Web;
 - operacao degradada quando a internet ou o radio falhar.
 
-> Telemetria nao controla propulsao, leme ou parada de emergencia. Controle RC, fail-safe e botao fisico continuam independentes.
+> O piloto automatico e experimental e nunca substitui o controle RC, o fail-safe nem a parada de emergencia. O Arduino so aceita comandos da Raspberry quando o canal CH3 esta fisicamente em AUTO; ao voltar para MANUAL, o comando remoto e cancelado imediatamente.
 
 ## Arquitetura
 
 ```mermaid
 flowchart LR
   S["Sensores e controle"] --> A["Arduino Mega"]
-  A -->|"USB serial com CRC"| P["Raspberry Pi embarcado"]
+  A <-->|"USB serial com CRC"| P["Raspberry Pi embarcado"]
   P --> D["SQLite / fila persistente"]
   P -->|"LoRaWAN AU915"| G["Gateway na margem"]
   G -->|"Ethernet / Wi-Fi / 4G"| B["API + MQTT + PostgreSQL"]
@@ -27,7 +28,7 @@ flowchart LR
   P -. "4G opcional" .-> B
 ```
 
-Mais detalhes: [arquitetura](docs/arquitetura.md), [hardware](docs/hardware.md), [BOM](docs/bom.md), [operacao](docs/operacao.md) e [teste de campo](docs/teste-campo.md).
+Mais detalhes: [arquitetura](docs/arquitetura.md), [autonomia e rotas](docs/autonomia.md), [hardware](docs/hardware.md), [BOM](docs/bom.md), [operacao](docs/operacao.md) e [teste de campo](docs/teste-campo.md).
 
 ## Sensores identificados nos esquemas
 
@@ -81,7 +82,9 @@ MIT.
 - API FastAPI com ingestao, historico, WebSocket, papeis e alertas;
 - integracao HTTP ChirpStack;
 - app Flutter com login, frota, alarmes, mapa e painel ao vivo;
-- firmware de aquisicao para Arduino Mega;
+- app com planejamento de rota, coordenadas/temperatura no mapa e visual de atitude ligado ao ADXL345;
+- firmware integrado para Arduino Mega com dois servos, ESC, modos MANUAL/RECORD/AUTO e watchdog;
+- missoes persistentes no backend e na Raspberry, com controlador fuzzy de rumo e distancia;
 - Docker, systemd e CI para Python, firmware, Flutter e container.
 
 ## Aplicativos Android e iPhone

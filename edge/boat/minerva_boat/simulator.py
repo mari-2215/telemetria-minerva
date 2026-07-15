@@ -29,7 +29,9 @@ def sample(boat_id: str, sequence: int) -> dict[str, object]:
         "power": {"battery_v": battery, "current_a": 4.2 + math.sin(phase) * 1.1},
         "motion": {"accel_x_mps2": 0.1, "accel_y_mps2": 0.2, "accel_z_mps2": 9.78},
         "environment": {"electronics_temp_c": 34.0, "humidity_pct": 55.0, "water_detected": False},
-        "propulsion": {"pod_angle_deg": 45.0, "throttle_norm": 0.4, "rc_healthy": True, "failsafe_active": False},
+        "control": {"mode": "manual", "recording_active": False, "rc_healthy": True, "failsafe_active": False},
+        "autopilot": {"enabled": False, "command_fresh": False, "last_command_sequence": 0, "command_age_ms": 0, "target_pod_deg": 45.0, "mission_id": "", "waypoint_index": 0},
+        "propulsion": {"pod_angle_deg": 45.0, "target_pod_angle_deg": 45.0, "rudder_norm": 0.0, "throttle_norm": 0.4, "servo1_pwm_us": 833, "servo2_pwm_us": 833, "esc_pwm_us": 1400},
         "status": {"severity": "ok", "alarms": []},
     }
 
@@ -53,4 +55,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

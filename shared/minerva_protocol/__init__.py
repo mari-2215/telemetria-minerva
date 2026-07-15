@@ -7,11 +7,16 @@ from .frame import (
 )
 from .model import Telemetry, TelemetryValidationError
 from .lora import decode_base64_lora_payload, decode_lora_payload, encode_lora_payload
+from .mission import AutopilotCommand, Mission, MissionValidationError, Waypoint
 
 __all__ = [
     "Frame",
     "FrameDecoder",
     "MessageType",
+    "AutopilotCommand",
+    "Mission",
+    "MissionValidationError",
+    "Waypoint",
     "Telemetry",
     "TelemetryValidationError",
     "crc16_ccitt",
