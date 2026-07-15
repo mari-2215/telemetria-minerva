@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      MINERVA_DB_PATH: /var/lib/minerva/backend.db
+      MINERVA_DEVICE_TOKEN: ${MINERVA_DEVICE_TOKEN:?configure no .env}
+      MINERVA_ACCESS_TOKENS_JSON: ${MINERVA_ACCESS_TOKENS_JSON:?configure no .env}
+      MINERVA_CHIRPSTACK_TOKEN: ${MINERVA_CHIRPSTACK_TOKEN:?configure no .env}
+      MINERVA_CORS_ORIGINS: ${MINERVA_CORS_ORIGINS:-http://localhost:3000}
+    volumes:
+      - api_data:/var/lib/minerva
+    ports:
+      - "8080:8080"
+
+volumes:
+  api_data:

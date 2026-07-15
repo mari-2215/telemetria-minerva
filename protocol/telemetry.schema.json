@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://minervanautica.dev/schemas/telemetry-v1.json",
+  "title": "Minerva Telemetry v1",
+  "type": "object",
+  "required": ["schema_version", "boat_id", "sequence", "recorded_at", "status"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "boat_id": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "position": {
+      "type": "object",
+      "properties": {
+        "latitude_deg": { "type": "number", "minimum": -90, "maximum": 90 },
+        "longitude_deg": { "type": "number", "minimum": -180, "maximum": 180 },
+        "speed_mps": { "type": "number", "minimum": 0 },
+        "course_deg": { "type": "number", "minimum": 0, "exclusiveMaximum": 360 },
+        "fix": { "type": "integer", "minimum": 0 },
+        "hdop": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "power": {
+      "type": "object",
+      "properties": {
+        "battery_v": { "type": "number" },
+        "current_a": { "type": "number" },
+        "power_w": { "type": "number" },
+        "energy_wh": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "motion": {
+      "type": "object",
+      "properties": {
+        "accel_x_mps2": { "type": "number" },
+        "accel_y_mps2": { "type": "number" },
+        "accel_z_mps2": { "type": "number" },
+        "vibration_rms_mps2": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "electronics_temp_c": { "type": "number" },
+        "air_temp_c": { "type": "number" },
+        "humidity_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "water_detected": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "propulsion": {
+      "type": "object",
+      "properties": {
+        "pod_angle_deg": { "type": "number", "minimum": 0, "maximum": 270 },
+        "throttle_norm": { "type": "number", "minimum": -1, "maximum": 1 },
+        "rc_healthy": { "type": "boolean" },
+        "failsafe_active": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "link": {
+      "type": "object",
+      "properties": {
+        "rssi_dbm": { "type": "number" },
+        "snr_db": { "type": "number" },
+        "packet_loss_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "object",
+      "required": ["severity"],
+      "properties": {
+        "severity": { "enum": ["ok", "warning", "critical"] },
+        "alarms": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+
