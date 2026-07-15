@@ -30,7 +30,7 @@ jobs:
       - run: pip install platformio
       - run: pio run
 
-  flutter:
+  android:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,10 +47,51 @@ jobs:
       - run: flutter test
       - run: flutter build web --release
       - run: flutter build apk --release
+      - run: flutter build appbundle --release
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetria-minerva-android-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publicar Android App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetria-minerva-android-aab
+          path: app/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --platforms=ios --org br.org.minervanautica .
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Compilar iOS sem assinatura
+        run: flutter build ios --release --no-codesign
+      - name: Empacotar build iOS de validacao
+        run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app build/telemetria-minerva-ios-unsigned.zip
+      - name: Publicar build iOS sem assinatura
+        uses: actions/upload-artifact@v4
+        with:
+          name: telemetria-minerva-ios-unsigned
+          path: app/build/telemetria-minerva-ios-unsigned.zip
+          if-no-files-found: error
+          retention-days: 30
 
   container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f deploy/Dockerfile .
-

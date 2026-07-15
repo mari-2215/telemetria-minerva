@@ -83,3 +83,9 @@ MIT.
 - app Flutter com login, frota, alarmes, mapa e painel ao vivo;
 - firmware de aquisicao para Arduino Mega;
 - Docker, systemd e CI para Python, firmware, Flutter e container.
+
+## Aplicativos Android e iPhone
+
+O GitHub Actions gera automaticamente um APK Android instalavel, um AAB para a Google Play e uma compilacao iOS sem assinatura. Os pacotes ficam disponiveis na secao **Artifacts** de cada execucao do workflow `CI`.
+
+A distribuicao para iPhone exige assinatura Apple. O caminho recomendado para a equipe e o laboratorio e o TestFlight. Consulte [docs/aplicativos.md](docs/aplicativos.md) para baixar o APK e preparar a conta Apple.
