@@ -29,7 +29,8 @@ class _FleetScreenState extends State<FleetScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const MinervaLogo(compact: true),
+        toolbarHeight: 68,
+        title: const MinervaAppBarTitle(title: 'Frota'),
         actions: [IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)), IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout))],
       ),
       body: FutureBuilder<List<BoatSummary>>(

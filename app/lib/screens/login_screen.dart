@@ -37,6 +37,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        toolbarHeight: 68,
+        title: const MinervaAppBarTitle(title: 'Telemetria'),
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
@@ -49,8 +54,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Center(child: MinervaLogo()),
-                    const SizedBox(height: 16),
                     Text('Telemetria e Piloto Automático', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
                     const SizedBox(height: 24),
                     TextField(controller: _server, decoration: const InputDecoration(labelText: 'Servidor', border: OutlineInputBorder())),

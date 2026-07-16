@@ -42,6 +42,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create --platforms=android,web --org br.org.minervanautica .
+      - run: python3 tool/configure_platforms.py android web
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
@@ -75,6 +76,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create --platforms=ios --org br.org.minervanautica .
+      - run: python3 tool/configure_platforms.py ios
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test

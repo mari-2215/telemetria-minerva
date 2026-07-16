@@ -8,8 +8,9 @@ void main() {
       const MaterialApp(home: Scaffold(body: Center(child: MinervaLogo()))),
     );
 
-    expect(find.text('MINERVA'), findsOneWidget);
-    expect(find.text('NAUTICA'), findsOneWidget);
-    expect(find.byIcon(Icons.sailing), findsOneWidget);
+    final logo = tester.widget<Image>(find.byType(Image));
+    expect(logo.image, isA<AssetImage>());
+    expect((logo.image as AssetImage).assetName, 'assets/images/minerva_nautica.png');
+    expect(logo.semanticLabel, 'Minerva Náutica');
   });
 }

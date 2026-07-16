@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import '../api_client.dart';
 import '../models.dart';
 import '../widgets/boat_attitude_view.dart';
+import '../widgets/minerva_logo.dart';
 import 'mission_planner_screen.dart';
 
 class TelemetryScreen extends StatefulWidget {
@@ -73,7 +74,8 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     final telemetry = _telemetry;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.boatId),
+        toolbarHeight: 68,
+        title: MinervaAppBarTitle(title: widget.boatId),
         actions: [
           IconButton(onPressed: _openPlanner, tooltip: 'Planejar rota', icon: const Icon(Icons.route)),
           IconButton(onPressed: _load, tooltip: 'Atualizar', icon: const Icon(Icons.refresh)),

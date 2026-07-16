@@ -1,95 +1,177 @@
-import 'dart:math' as math;
+import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:model_viewer_plus/model_viewer_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
-class BoatAttitudeView extends StatelessWidget {
-  const BoatAttitudeView({super.key, required this.rollDeg, required this.pitchDeg});
+import 'boat_attitude_web_stub.dart'
+    if (dart.library.js_interop) 'boat_attitude_web.dart';
+
+class BoatAttitudeView extends StatefulWidget {
+  const BoatAttitudeView({
+    super.key,
+    required this.rollDeg,
+    required this.pitchDeg,
+  });
+
+  static final Uri _modelSource =
+      Uri.parse('https://grabcad.com/library/mini-10-tugboat-1');
+
   final double rollDeg;
   final double pitchDeg;
 
   @override
+  State<BoatAttitudeView> createState() => _BoatAttitudeViewState();
+}
+
+class _BoatAttitudeViewState extends State<BoatAttitudeView> {
+  static const String _modelId = 'minerva-tug-attitude';
+  WebViewController? _webViewController;
+
+  double get _roll => widget.rollDeg.clamp(-60.0, 60.0).toDouble();
+  double get _pitch => widget.pitchDeg.clamp(-45.0, 45.0).toDouble();
+  String get _orientation =>
+      '${(-_roll).toStringAsFixed(2)}deg ${_pitch.toStringAsFixed(2)}deg 0deg';
+
+  @override
+  void didUpdateWidget(covariant BoatAttitudeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.rollDeg != widget.rollDeg ||
+        oldWidget.pitchDeg != widget.pitchDeg) {
+      _updateOrientation();
+    }
+  }
+
+  void _updateOrientation() {
+    final orientation = _orientation;
+    updateWebModelOrientation(_modelId, orientation);
+    unawaited(_updateMobileOrientation(orientation));
+  }
+
+  Future<void> _updateMobileOrientation(String orientation) async {
+    final controller = _webViewController;
+    if (controller == null) return;
+    try {
+      await controller.runJavaScript(
+        'document.getElementById(${jsonEncode(_modelId)})'
+        '?.setAttribute("orientation", ${jsonEncode(orientation)});',
+      );
+    } on Object {
+      // A próxima amostra de telemetria tenta novamente se a WebView ainda
+      // estiver carregando ou já tiver sido descartada.
+    }
+  }
+
+  Future<void> _openModelSource(BuildContext context) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        BoatAttitudeView._modelSource,
+        mode: LaunchMode.externalApplication,
+      );
+    } on Object {
+      opened = false;
+    }
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir o GrabCAD.')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final roll = rollDeg.clamp(-35.0, 35.0).toDouble() * math.pi / 180;
-    final pitch = pitchDeg.clamp(-25.0, 25.0).toDouble() * math.pi / 180;
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: Container(
-        height: 210,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF0C4A6E), Color(0xFF020617)]),
-        ),
+      child: SizedBox(
+        height: 360,
         child: Stack(
           children: [
-            const Positioned.fill(child: CustomPaint(painter: _WaterPainter())),
-            Center(
-              child: Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.001)
-                  ..rotateX(pitch)
-                  ..rotateZ(-roll),
-                child: const SizedBox(width: 230, height: 130, child: CustomPaint(painter: _BoatPainter())),
+            Positioned.fill(
+              child: ModelViewer(
+                key: const ValueKey('minerva-tug-model'),
+                id: _modelId,
+                src: 'assets/models/minerva_tug.glb',
+                alt: 'Modelo 3D do rebocador Minerva',
+                backgroundColor: const Color(0xFF05162D),
+                loading: Loading.eager,
+                reveal: Reveal.auto,
+                cameraControls: true,
+                disablePan: true,
+                autoRotate: false,
+                cameraOrbit: '35deg 68deg 135%',
+                cameraTarget: '0m 0m 0m',
+                fieldOfView: '30deg',
+                environmentImage: 'neutral',
+                exposure: 1.05,
+                shadowIntensity: 0.8,
+                shadowSoftness: 0.8,
+                interpolationDecay: 80,
+                orientation: _orientation,
+                debugLogging: false,
+                onWebViewCreated: (controller) {
+                  _webViewController = controller;
+                  _updateOrientation();
+                },
               ),
             ),
             Positioned(
               left: 14,
               top: 12,
-              child: Text('ATITUDE 3D · ADXL345', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white70, fontWeight: FontWeight.bold)),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xCC020617),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  child: Text(
+                    'ATITUDE 3D · ADXL345',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
             ),
             Positioned(
               right: 14,
-              bottom: 10,
-              child: Text('roll ${rollDeg.toStringAsFixed(1)}°  ·  pitch ${pitchDeg.toStringAsFixed(1)}°', style: const TextStyle(color: Colors.white70)),
+              bottom: 12,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xCC020617),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  child: Text(
+                    'roll ${widget.rollDeg.toStringAsFixed(1)}°  ·  pitch ${widget.pitchDeg.toStringAsFixed(1)}°',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 6,
+              bottom: 2,
+              child: TextButton.icon(
+                onPressed: () => _openModelSource(context),
+                icon: const Icon(Icons.info_outline, size: 16),
+                label: const Text('Altug Tuncel · GrabCAD'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  backgroundColor: const Color(0x99020617),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
   }
-}
-
-class _WaterPainter extends CustomPainter {
-  const _WaterPainter();
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0x5538BDF8)..style = PaintingStyle.stroke..strokeWidth = 1.5;
-    for (double y = 120; y < size.height; y += 18) {
-      final path = Path()..moveTo(0, y);
-      for (double x = 0; x <= size.width; x += 36) {
-        path.quadraticBezierTo(x + 9, y - 4, x + 18, y);
-        path.quadraticBezierTo(x + 27, y + 4, x + 36, y);
-      }
-      canvas.drawPath(path, paint);
-    }
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _BoatPainter extends CustomPainter {
-  const _BoatPainter();
-  @override
-  void paint(Canvas canvas, Size size) {
-    final hull = Path()
-      ..moveTo(14, 66)
-      ..quadraticBezierTo(size.width / 2, 118, size.width - 12, 56)
-      ..lineTo(size.width - 42, 91)
-      ..quadraticBezierTo(size.width / 2, 132, 36, 92)
-      ..close();
-    canvas.drawShadow(hull, Colors.black, 12, true);
-    canvas.drawPath(hull, Paint()..shader = const LinearGradient(colors: [Color(0xFF020617), Color(0xFF334155)]).createShader(Offset.zero & size));
-    final deck = Path()
-      ..moveTo(40, 64)
-      ..lineTo(size.width - 36, 58)
-      ..lineTo(size.width - 62, 79)
-      ..lineTo(65, 84)
-      ..close();
-    canvas.drawPath(deck, Paint()..color = const Color(0xFFE2E8F0));
-    final cabin = RRect.fromRectAndRadius(Rect.fromLTWH(84, 30, 82, 42), const Radius.circular(10));
-    canvas.drawRRect(cabin, Paint()..color = const Color(0xFF0F172A));
-    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(97, 37, 55, 20), const Radius.circular(5)), Paint()..color = const Color(0xFF38BDF8));
-    canvas.drawCircle(Offset(size.width - 46, 72), 7, Paint()..color = const Color(0xFF0EA5E9));
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

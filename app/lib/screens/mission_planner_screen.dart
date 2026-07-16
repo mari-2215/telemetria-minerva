@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../widgets/minerva_logo.dart';
 
 class MissionPlannerScreen extends StatefulWidget {
   const MissionPlannerScreen({
@@ -72,7 +73,10 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   Widget build(BuildContext context) {
     final center = widget.initialPosition ?? const LatLng(-22.8622, -43.2302);
     return Scaffold(
-      appBar: AppBar(title: Text('Rotas · ${widget.boatId}')),
+      appBar: AppBar(
+        toolbarHeight: 68,
+        title: MinervaAppBarTitle(title: 'Rotas · ${widget.boatId}'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [

@@ -82,7 +82,7 @@ MIT.
 - API FastAPI com ingestao, historico, WebSocket, papeis e alertas;
 - integracao HTTP ChirpStack;
 - app Flutter com login, frota, alarmes, mapa e painel ao vivo;
-- app com planejamento de rota, coordenadas/temperatura no mapa e visual de atitude ligado ao ADXL345;
+- app com planejamento de rota, coordenadas/temperatura no mapa e modelo 3D de atitude ligado ao ADXL345;
 - firmware integrado para Arduino Mega com dois servos, ESC, modos MANUAL/RECORD/AUTO e watchdog;
 - missoes persistentes no backend e na Raspberry, com controlador fuzzy de rumo e distancia;
 - Docker, systemd e CI para Python, firmware, Flutter e container.
@@ -92,3 +92,7 @@ MIT.
 O GitHub Actions gera automaticamente um APK Android instalavel, um AAB para a Google Play e uma compilacao iOS sem assinatura. Os pacotes ficam disponiveis na secao **Artifacts** de cada execucao do workflow `CI`.
 
 A distribuicao para iPhone exige assinatura Apple. O caminho recomendado para a equipe e o laboratorio e o TestFlight. Consulte [docs/aplicativos.md](docs/aplicativos.md) para baixar o APK e preparar a conta Apple.
+
+## Modelo 3D
+
+O painel de atitude usa uma versão GLB do [MİNİ 10 TUGBOAT](https://grabcad.com/library/mini-10-tugboat-1), de Altug Tuncel / Berkeley Engineering. O modelo foi convertido para uso acadêmico e não comercial no aplicativo. Veja os detalhes em [docs/ATRIBUICOES.md](docs/ATRIBUICOES.md).

@@ -6,27 +6,45 @@ class MinervaLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(compact ? 3 : 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(compact ? 10 : 18),
+        boxShadow: const [
+          BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Image.asset(
+        'assets/images/minerva_nautica.png',
+        height: compact ? 46 : 150,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        semanticLabel: 'Minerva Náutica',
+      ),
+    );
+  }
+}
+
+class MinervaAppBarTitle extends StatelessWidget {
+  const MinervaAppBarTitle({super.key, required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: compact ? 34 : 54,
-          height: compact ? 34 : 54,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF020617),
-            border: Border.all(color: const Color(0xFF38BDF8), width: 2),
+        const MinervaLogo(compact: true),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
-          child: Icon(Icons.sailing, size: compact ? 22 : 34, color: const Color(0xFF7DD3FC)),
-        ),
-        const SizedBox(width: 10),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('MINERVA', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: compact ? 1.2 : 2.2, fontSize: compact ? 15 : 22)),
-            Text('NAUTICA', style: TextStyle(color: const Color(0xFF7DD3FC), letterSpacing: compact ? 2.0 : 3.2, fontSize: compact ? 8 : 11)),
-          ],
         ),
       ],
     );
