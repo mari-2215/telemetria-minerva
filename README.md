@@ -95,4 +95,4 @@ A distribuicao para iPhone exige assinatura Apple. O caminho recomendado para a 
 
 ## Modelo 3D
 
-O painel de atitude usa uma versão GLB do [MİNİ 10 TUGBOAT](https://grabcad.com/library/mini-10-tugboat-1), de Altug Tuncel / Berkeley Engineering. O modelo foi convertido para uso acadêmico e não comercial no aplicativo. Veja os detalhes em [docs/ATRIBUICOES.md](docs/ATRIBUICOES.md).
+O painel de atitude usa uma malha 3D compacta derivada do [MİNİ 10 TUGBOAT](https://grabcad.com/library/mini-10-tugboat-1), de Altug Tuncel / Berkeley Engineering. Ela é renderizada diretamente pelo Flutter, sem navegador embutido e sem depender de internet. Veja os detalhes em [docs/ATRIBUICOES.md](docs/ATRIBUICOES.md).

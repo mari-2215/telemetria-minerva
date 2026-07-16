@@ -1,7 +1,7 @@
 name: telemetria_minerva_app
 description: Aplicativo de telemetria da Minerva Nautica
 publish_to: none
-version: 0.1.0+1
+version: 0.1.1+2
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -12,11 +12,8 @@ dependencies:
   flutter_map: ^8.2.2
   http: ^1.5.0
   latlong2: ^0.9.1
-  model_viewer_plus: ^1.10.0
   shared_preferences: ^2.5.3
   url_launcher: ^6.3.2
-  web: ^1.1.1
-  webview_flutter: ^4.11.0
 
 dev_dependencies:
   flutter_test:
@@ -27,4 +24,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/minerva_nautica.png
-    - assets/models/minerva_tug.glb
+    - assets/models/minerva_tug.mesh
