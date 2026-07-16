@@ -34,6 +34,6 @@ Trocar de AUTO para MANUAL invalida o comando armazenado e para de usar a Raspbe
 
 ## Limites atuais
 
-O ADXL345 mede inclinacao e aceleracao, mas nao fornece rumo. Em movimento, o piloto usa o `course_deg` do GPS; em velocidade muito baixa, esse rumo pode oscilar. Para manobras precisas a partir do repouso, adicione magnetometro/IMU calibrado. O aplicativo mostra uma visualizacao 3D aproximada de roll e pitch derivada da gravidade medida pelo ADXL345.
+O ADXL345 mede inclinacao e aceleracao, mas nao fornece rumo. Em movimento, o piloto usa o `course_deg` do GPS; em velocidade muito baixa, esse rumo pode oscilar. Para manobras precisas a partir do repouso, use uma IMU calibrada. O aplicativo aceita `roll_deg`, `pitch_deg` e `yaw_deg` no objeto `motion`, movimenta o modelo 3D nos tres eixos e continua calculando roll/pitch pelo acelerometro quando os angulos processados ainda nao estiverem disponiveis. Em um MPU sem magnetometro, o yaw e relativo ao instante da inicializacao e pode derivar com o tempo.
 
 O download de missao usa a API HTTP. Uma rota ja salva continua offline, mas enviar uma rota nova a dois quilometros exige conectividade IP com a Raspberry ou uma futura implementacao de downlink LoRaWAN fragmentado e autenticado.

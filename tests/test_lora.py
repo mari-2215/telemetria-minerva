@@ -18,6 +18,7 @@ def telemetry() -> Telemetry:
             "recorded_at": "2026-07-14T20:00:00Z",
             "position": {"latitude_deg": -22.8622, "longitude_deg": -43.2302, "speed_mps": 1.23, "course_deg": 271.2, "fix": 3},
             "power": {"battery_v": 12.431, "current_a": 4.212},
+            "motion": {"roll_deg": 3.25, "pitch_deg": -1.5, "yaw_deg": 271.2},
             "environment": {"electronics_temp_c": 34.25, "humidity_pct": 55.5, "water_detected": False},
             "propulsion": {"pod_angle_deg": 45.5, "throttle_norm": 0.42, "rc_healthy": True, "failsafe_active": False},
             "status": {"severity": "ok", "alarms": []},
@@ -27,12 +28,21 @@ def telemetry() -> Telemetry:
 
 def test_compact_lora_round_trip():
     payload = encode_lora_payload(telemetry())
-    assert len(payload) == 37
+    assert len(payload) == 43
     decoded = decode_lora_payload(payload, "azimutal-01", rssi_dbm=-91, snr_db=7.5)
     assert decoded.sequence == 77
     assert decoded.data["position"]["latitude_deg"] == -22.8622
     assert decoded.data["power"]["battery_v"] == 12.431
+    assert decoded.data["motion"] == {"roll_deg": 3.25, "pitch_deg": -1.5, "yaw_deg": 271.2}
     assert decoded.data["link"] == {"rssi_dbm": -91, "snr_db": 7.5}
+
+
+def test_decodes_legacy_payload_without_orientation():
+    payload = bytearray(encode_lora_payload(telemetry()))
+    payload[0] = 1
+    decoded = decode_lora_payload(bytes(payload[:-6]), "azimutal-01")
+    assert decoded.sequence == 77
+    assert "motion" not in decoded.data
 
 
 def test_chirpstack_webhook_ingests_payload():

@@ -9,8 +9,11 @@ from typing import Any
 from .model import Telemetry, TelemetryValidationError
 
 
-LORA_PAYLOAD_VERSION = 1
-_PAYLOAD = struct.Struct("<BHIIiiHHHhhHHhH")
+LORA_PAYLOAD_VERSION = 2
+_PAYLOAD_V1 = struct.Struct("<BHIIiiHHHhhHHhH")
+_PAYLOAD_V2 = struct.Struct("<BHIIiiHHHhhHHhHhhH")
+_ORIENTATION_UNAVAILABLE = -32768
+_YAW_UNAVAILABLE = 65535
 
 FLAG_GPS_VALID = 1 << 0
 FLAG_WATER_DETECTED = 1 << 1
@@ -35,11 +38,26 @@ def _number(mapping: dict[str, Any], key: str, default: float = 0.0) -> float:
     return float(value)
 
 
+def _orientation_cdeg(mapping: dict[str, Any], key: str) -> int:
+    value = mapping.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        return _ORIENTATION_UNAVAILABLE
+    return _clamp(float(value) * 100, -32767, 32767)
+
+
+def _yaw_cdeg(mapping: dict[str, Any]) -> int:
+    value = mapping.get("yaw_deg")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        return _YAW_UNAVAILABLE
+    return _clamp(float(value) % 360.0 * 100, 0, 35999)
+
+
 def encode_lora_payload(telemetry: Telemetry) -> bytes:
     value = telemetry.data
     position = value.get("position") or {}
     power = value.get("power") or {}
     environment = value.get("environment") or {}
+    motion = value.get("motion") or {}
     propulsion = value.get("propulsion") or {}
     control = value.get("control") or {}
     alarms = set((value.get("status") or {}).get("alarms") or [])
@@ -66,7 +84,7 @@ def encode_lora_payload(telemetry: Telemetry) -> bytes:
         alarm_bits |= ALARM_SENSOR
 
     recorded = datetime.fromisoformat(telemetry.recorded_at.replace("Z", "+00:00"))
-    return _PAYLOAD.pack(
+    return _PAYLOAD_V2.pack(
         LORA_PAYLOAD_VERSION,
         flags,
         telemetry.sequence & 0xFFFFFFFF,
@@ -82,12 +100,30 @@ def encode_lora_payload(telemetry: Telemetry) -> bytes:
         _clamp(_number(propulsion, "pod_angle_deg") * 100, 0, 27000),
         _clamp(_number(propulsion, "throttle_norm") * 1000, -1000, 1000),
         alarm_bits,
+        _orientation_cdeg(motion, "roll_deg"),
+        _orientation_cdeg(motion, "pitch_deg"),
+        _yaw_cdeg(motion),
     )
 
 
 def decode_lora_payload(payload: bytes, boat_id: str, *, rssi_dbm: float | None = None, snr_db: float | None = None) -> Telemetry:
-    if len(payload) != _PAYLOAD.size:
-        raise TelemetryValidationError(f"LoRa payload must be {_PAYLOAD.size} bytes")
+    if len(payload) == _PAYLOAD_V1.size:
+        unpacked = _PAYLOAD_V1.unpack(payload)
+        if unpacked[0] != 1:
+            raise TelemetryValidationError("unsupported LoRa payload version")
+        roll_cdeg = pitch_cdeg = _ORIENTATION_UNAVAILABLE
+        yaw_cdeg = _YAW_UNAVAILABLE
+    elif len(payload) == _PAYLOAD_V2.size:
+        unpacked = _PAYLOAD_V2.unpack(payload)
+        if unpacked[0] != LORA_PAYLOAD_VERSION:
+            raise TelemetryValidationError("unsupported LoRa payload version")
+        roll_cdeg, pitch_cdeg, yaw_cdeg = unpacked[-3:]
+        unpacked = unpacked[:-3]
+    else:
+        raise TelemetryValidationError(
+            f"LoRa payload must be {_PAYLOAD_V1.size} or {_PAYLOAD_V2.size} bytes"
+        )
+
     (
         version,
         flags,
@@ -104,9 +140,7 @@ def decode_lora_payload(payload: bytes, boat_id: str, *, rssi_dbm: float | None 
         pod_cdeg,
         throttle_milli,
         alarm_bits,
-    ) = _PAYLOAD.unpack(payload)
-    if version != LORA_PAYLOAD_VERSION:
-        raise TelemetryValidationError("unsupported LoRa payload version")
+    ) = unpacked
 
     alarms: list[str] = []
     for bit, name in (
@@ -144,6 +178,15 @@ def decode_lora_payload(payload: bytes, boat_id: str, *, rssi_dbm: float | None 
         },
         "status": {"severity": "critical" if alarms else "ok", "alarms": alarms},
     }
+    orientation = {
+        key: value / 100
+        for key, value in (("roll_deg", roll_cdeg), ("pitch_deg", pitch_cdeg))
+        if value != _ORIENTATION_UNAVAILABLE
+    }
+    if yaw_cdeg != _YAW_UNAVAILABLE:
+        orientation["yaw_deg"] = yaw_cdeg / 100
+    if orientation:
+        result["motion"] = orientation
     if rssi_dbm is not None or snr_db is not None:
         result["link"] = {}
         if rssi_dbm is not None:

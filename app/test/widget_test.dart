@@ -18,11 +18,14 @@ void main() {
   testWidgets('loads the bundled 3D attitude mesh', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(body: BoatAttitudeView(rollDeg: 4, pitchDeg: -2)),
+        home: Scaffold(
+          body: BoatAttitudeView(yawDeg: 127, rollDeg: 4, pitchDeg: -2),
+        ),
       ),
     );
 
-    expect(find.text('ATITUDE 3D · ADXL345'), findsOneWidget);
+    expect(find.text('ATITUDE 3D · IMU'), findsOneWidget);
+    expect(find.textContaining('YAW   127.0°'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text('Não foi possível carregar o modelo 3D'), findsNothing);
     expect(find.byType(CustomPaint), findsWidgets);

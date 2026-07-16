@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 class BoatAttitudeView extends StatefulWidget {
   const BoatAttitudeView({
     super.key,
+    required this.yawDeg,
     required this.rollDeg,
     required this.pitchDeg,
   });
@@ -16,6 +17,7 @@ class BoatAttitudeView extends StatefulWidget {
   static final Uri _modelSource =
       Uri.parse('https://grabcad.com/library/mini-10-tugboat-1');
 
+  final double? yawDeg;
   final double rollDeg;
   final double pitchDeg;
 
@@ -81,6 +83,7 @@ class _BoatAttitudeViewState extends State<BoatAttitudeView> {
                     return CustomPaint(
                       painter: _BoatMeshPainter(
                         mesh: mesh,
+                        yawDeg: widget.yawDeg ?? 0,
                         rollDeg: widget.rollDeg,
                         pitchDeg: widget.pitchDeg,
                         viewYawDeg: _viewYawDeg,
@@ -95,7 +98,7 @@ class _BoatAttitudeViewState extends State<BoatAttitudeView> {
               top: 12,
               child: _PanelLabel(
                 child: const Text(
-                  'ATITUDE 3D · ADXL345',
+                  'ATITUDE 3D · IMU',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -108,7 +111,9 @@ class _BoatAttitudeViewState extends State<BoatAttitudeView> {
               top: 12,
               child: _PanelLabel(
                 child: Text(
-                  'R ${widget.rollDeg.toStringAsFixed(1)}°\nP ${widget.pitchDeg.toStringAsFixed(1)}°',
+                  'YAW   ${widget.yawDeg?.toStringAsFixed(1) ?? '--'}°\n'
+                  'PITCH ${widget.pitchDeg.toStringAsFixed(1)}°\n'
+                  'ROLL  ${widget.rollDeg.toStringAsFixed(1)}°',
                   textAlign: TextAlign.right,
                   style: const TextStyle(color: Colors.white),
                 ),
@@ -247,12 +252,14 @@ class _BoatMesh {
 class _BoatMeshPainter extends CustomPainter {
   const _BoatMeshPainter({
     required this.mesh,
+    required this.yawDeg,
     required this.rollDeg,
     required this.pitchDeg,
     required this.viewYawDeg,
   });
 
   final _BoatMesh mesh;
+  final double yawDeg;
   final double rollDeg;
   final double pitchDeg;
   final double viewYawDeg;
@@ -265,7 +272,9 @@ class _BoatMeshPainter extends CustomPainter {
 
     final roll = _radians(rollDeg.clamp(-60, 60).toDouble());
     final pitch = _radians(pitchDeg.clamp(-45, 45).toDouble());
-    final yaw = _radians(viewYawDeg);
+    // O rumo do barco e o giro manual da camera permanecem independentes na
+    // interface, mas se combinam nesta projecao relativa.
+    final yaw = _radians(yawDeg + viewYawDeg);
     const viewTilt = -0.22;
     final sinRoll = math.sin(-roll);
     final cosRoll = math.cos(-roll);
@@ -407,23 +416,31 @@ class _BoatMeshPainter extends CustomPainter {
   }
 
   void _drawReferenceGrid(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2 + 10);
-    final radius = math.min(size.width, size.height).toDouble() * 0.36;
+    const spacing = 28.0;
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.08)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
-    canvas.drawCircle(center, radius, paint);
-    canvas.drawCircle(center, radius * 0.68, paint);
-    canvas.drawLine(
-        Offset(center.dx - radius, center.dy), Offset(center.dx + radius, center.dy), paint);
-    canvas.drawLine(
-        Offset(center.dx, center.dy - radius), Offset(center.dx, center.dy + radius), paint);
+
+    for (var column = 1; column * spacing < size.width; column++) {
+      paint.color = Colors.white.withValues(
+        alpha: column % 4 == 0 ? 0.075 : 0.035,
+      );
+      final x = column * spacing;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (var row = 1; row * spacing < size.height; row++) {
+      paint.color = Colors.white.withValues(
+        alpha: row % 4 == 0 ? 0.075 : 0.035,
+      );
+      final y = row * spacing;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant _BoatMeshPainter oldDelegate) {
     return oldDelegate.mesh != mesh ||
+        oldDelegate.yawDeg != yawDeg ||
         oldDelegate.rollDeg != rollDeg ||
         oldDelegate.pitchDeg != pitchDeg ||
         oldDelegate.viewYawDeg != viewYawDeg;

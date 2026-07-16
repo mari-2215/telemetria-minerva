@@ -103,7 +103,11 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                BoatAttitudeView(rollDeg: telemetry.rollDeg, pitchDeg: telemetry.pitchDeg),
+                BoatAttitudeView(
+                  yawDeg: telemetry.yawDeg,
+                  pitchDeg: telemetry.pitchDeg,
+                  rollDeg: telemetry.rollDeg,
+                ),
                 const SizedBox(height: 12),
                 if (telemetry.latitude != null && telemetry.longitude != null)
                   SizedBox(

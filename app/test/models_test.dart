@@ -19,15 +19,40 @@ void main() {
       'recorded_at': '2026-07-14T20:00:00Z',
       'position': {'latitude_deg': -22.8, 'longitude_deg': -43.2},
       'power': {'battery_v': 12.4},
-      'motion': {'accel_x_mps2': 0.0, 'accel_y_mps2': 0.0, 'accel_z_mps2': 9.81},
+      'motion': {
+        'accel_x_mps2': 0.0,
+        'accel_y_mps2': 0.0,
+        'accel_z_mps2': 9.81,
+        'roll_deg': 3.5,
+        'pitch_deg': -2.25,
+        'yaw_deg': 127.75,
+      },
       'control': {'mode': 'auto'},
       'status': {'severity': 'critical', 'alarms': ['WATER_DETECTED']},
     });
     expect(telemetry.sequence, 42);
     expect(telemetry.alarms, ['WATER_DETECTED']);
     expect(telemetry.controlMode, 'auto');
+    expect(telemetry.rollDeg, 3.5);
+    expect(telemetry.pitchDeg, -2.25);
+    expect(telemetry.yawDeg, 127.75);
+  });
+
+  test('falls back to accelerometer tilt while yaw is unavailable', () {
+    final telemetry = Telemetry.fromJson({
+      'boat_id': 'azimutal-01',
+      'sequence': 43,
+      'recorded_at': '2026-07-14T20:00:01Z',
+      'motion': {
+        'accel_x_mps2': 0.0,
+        'accel_y_mps2': 0.0,
+        'accel_z_mps2': 9.81,
+      },
+    });
+
     expect(telemetry.rollDeg, 0);
     expect(telemetry.pitchDeg, 0);
+    expect(telemetry.yawDeg, isNull);
   });
 
   test('parses mission waypoints', () {

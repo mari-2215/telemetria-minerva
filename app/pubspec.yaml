@@ -1,7 +1,7 @@
 name: telemetria_minerva_app
 description: Aplicativo de telemetria da Minerva Nautica
 publish_to: none
-version: 0.1.1+2
+version: 0.1.2+3
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -22,6 +22,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-Variable.ttf
   assets:
+    - assets/fonts/OFL-Manrope.txt
     - assets/images/minerva_nautica.png
     - assets/models/minerva_tug.mesh

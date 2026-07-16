@@ -2,6 +2,11 @@
 
 O aplicativo de telemetria usa Flutter e compartilha o mesmo codigo entre Android e iOS.
 
+O painel de atitude 3D recebe `motion.roll_deg`, `motion.pitch_deg` e
+`motion.yaw_deg`. O yaw do sensor movimenta o barco; arrastar horizontalmente
+continua girando apenas a camera. Enquanto o firmware nao enviar `yaw_deg`, o
+painel mostra `--` nesse campo sem inventar um rumo a partir do acelerometro.
+
 ## Android: APK para a equipe
 
 A cada push ou pull request, o workflow `CI` gera dois artefatos:

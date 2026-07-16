@@ -37,6 +37,12 @@
         "accel_x_mps2": { "type": "number" },
         "accel_y_mps2": { "type": "number" },
         "accel_z_mps2": { "type": "number" },
+        "gyro_x_dps": { "type": "number" },
+        "gyro_y_dps": { "type": "number" },
+        "gyro_z_dps": { "type": "number" },
+        "roll_deg": { "type": "number" },
+        "pitch_deg": { "type": "number" },
+        "yaw_deg": { "type": "number" },
         "vibration_rms_mps2": { "type": "number", "minimum": 0 }
       },
       "additionalProperties": false

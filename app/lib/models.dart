@@ -45,17 +45,31 @@ class Telemetry {
   double? get longitude => (position['longitude_deg'] as num?)?.toDouble();
   double? get temperatureC => (environment['electronics_temp_c'] as num?)?.toDouble();
   String get controlMode => control['mode']?.toString() ?? 'desconhecido';
+
+  double? _motionNumber(String key) {
+    final value = (motion[key] as num?)?.toDouble();
+    return value != null && value.isFinite ? value : null;
+  }
+
   double get rollDeg {
+    final reported = _motionNumber('roll_deg');
+    if (reported != null) return reported;
     final y = (motion['accel_y_mps2'] as num?)?.toDouble();
     final z = (motion['accel_z_mps2'] as num?)?.toDouble();
     return y == null || z == null ? 0 : math.atan2(y, z) * 180 / math.pi;
   }
+
   double get pitchDeg {
+    final reported = _motionNumber('pitch_deg');
+    if (reported != null) return reported;
     final x = (motion['accel_x_mps2'] as num?)?.toDouble();
     final y = (motion['accel_y_mps2'] as num?)?.toDouble();
     final z = (motion['accel_z_mps2'] as num?)?.toDouble();
     return x == null || y == null || z == null ? 0 : math.atan2(-x, math.sqrt(y * y + z * z)) * 180 / math.pi;
   }
+
+  double? get yawDeg => _motionNumber('yaw_deg');
+
   List<String> get alarms => ((status['alarms'] as List?) ?? const []).map((value) => value.toString()).toList();
 
   factory Telemetry.fromJson(Map<String, dynamic> json) => Telemetry(raw: json);
