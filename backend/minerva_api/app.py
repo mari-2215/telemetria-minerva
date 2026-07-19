@@ -59,11 +59,16 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         if owned_store and app.state.store is not None:
             app.state.store.close()
 
-    app = FastAPI(title="Telemetria Minerva API", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Telemetria Minerva API", version="0.3.0", lifespan=lifespan)
     app.state.store = store
     app.state.connections = ConnectionManager()
     origins = [value.strip() for value in os.getenv("MINERVA_CORS_ORIGINS", "http://localhost:3000").split(",") if value.strip()]
-    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["*"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["*"],
+    )
 
     def current_store(request: Request) -> TelemetryStore:
         return request.app.state.store
@@ -205,10 +210,45 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         _: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
         telemetry_store: TelemetryStore = Depends(current_store),
     ) -> dict[str, Any]:
-        mission = telemetry_store.activate_mission(mission_id, Telemetry.utc_now())
+        try:
+            mission = telemetry_store.activate_mission(mission_id, Telemetry.utc_now())
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         if mission is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
         return mission
+
+    @app.post("/v1/missions/{mission_id}/ready")
+    def confirm_mission_start(
+        mission_id: str,
+        payload: dict[str, Any],
+        _: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        ready = payload.get("ready")
+        if not isinstance(ready, bool):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="ready must be boolean")
+        try:
+            mission = telemetry_store.set_mission_ready(mission_id, ready, Telemetry.utc_now())
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        if mission is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
+        return mission
+
+    @app.delete("/v1/missions/{mission_id}")
+    def delete_mission(
+        mission_id: str,
+        _: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, bool]:
+        try:
+            deleted = telemetry_store.delete_mission(mission_id)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        if not deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
+        return {"deleted": True}
 
     @app.get("/v1/boats/{boat_id}/recordings/active")
     def active_recording(
@@ -268,6 +308,34 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         require_device_token(x_device_token)
         return telemetry_store.pending_mission(boat_id)
 
+    @app.get("/v1/boats/{boat_id}/missions/authorized")
+    def authorized_pending_mission(
+        boat_id: str,
+        x_device_token: str | None = Header(default=None),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any] | None:
+        require_device_token(x_device_token)
+        return telemetry_store.authorized_pending_mission(boat_id)
+
+    @app.post("/v1/missions/{mission_id}/ready/device")
+    def set_device_mission_ready(
+        mission_id: str,
+        payload: dict[str, Any],
+        x_device_token: str | None = Header(default=None),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        require_device_token(x_device_token)
+        ready = payload.get("ready")
+        if not isinstance(ready, bool):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="ready must be boolean")
+        try:
+            mission = telemetry_store.set_mission_ready(mission_id, ready, Telemetry.utc_now())
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        if mission is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
+        return mission
+
     @app.post("/v1/boats/{boat_id}/recordings", status_code=status.HTTP_201_CREATED)
     def upload_recording(
         boat_id: str,
@@ -297,7 +365,7 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         require_device_token(x_device_token)
         mission_status = payload.get("status")
-        if mission_status not in {"active", "completed", "cancelled", "failed"}:
+        if mission_status not in {"pending", "active", "completed", "cancelled", "failed"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="invalid mission status")
         result = telemetry_store.update_mission_status(
             mission_id, mission_status, Telemetry.utc_now(), payload.get("error")

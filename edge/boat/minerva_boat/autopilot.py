@@ -36,7 +36,7 @@ class HttpMissionClient:
         return json.loads(body) if body else None
 
     def pending(self, boat_id: str) -> Mission | None:
-        value = self._request("GET", f"/v1/boats/{boat_id}/missions/pending")
+        value = self._request("GET", f"/v1/boats/{boat_id}/missions/authorized")
         if value is None:
             return None
         try:
@@ -49,6 +49,9 @@ class HttpMissionClient:
         if error_message:
             payload["error"] = error_message
         self._request("POST", f"/v1/missions/{mission_id}/status", payload)
+
+    def set_ready(self, mission_id: str, ready: bool) -> None:
+        self._request("POST", f"/v1/missions/{mission_id}/ready/device", {"ready": ready})
 
     def upload_recording(self, boat_id: str, recording: dict[str, Any]) -> None:
         self._request("POST", f"/v1/boats/{boat_id}/recordings", recording)
@@ -181,15 +184,30 @@ class MissionAutopilot:
         self.client.set_status(mission.mission_id, "active")
         return True
 
+    def _revoke_if_active(self) -> None:
+        mission_id = self.store.revoke_active_mission(self.boat_id)
+        if mission_id is None or self.client is None:
+            return
+        try:
+            self.client.set_ready(mission_id, False)
+            self.client.set_status(mission_id, "pending")
+        except MissionSyncError:
+            # A missão já foi revogada localmente, portanto o motor continua seguro.
+            pass
+
     def build_command(self, telemetry: Telemetry | None, now: float | None = None) -> bytes | None:
         current = time.monotonic() if now is None else now
         if current - self.last_command_at < self.command_interval_seconds or telemetry is None:
             return None
         control = telemetry.data.get("control") or {}
         autopilot_state = telemetry.data.get("autopilot") or {}
-        if control.get("mode") != "auto" or not control.get("rc_healthy", False):
-            return None
-        if not autopilot_state.get("latched", False):
+        ready_for_auto = (
+            control.get("mode") == "auto"
+            and bool(control.get("rc_healthy", False))
+            and bool(autopilot_state.get("latched", False))
+        )
+        if not ready_for_auto:
+            self._revoke_if_active()
             return None
         position = telemetry.data.get("position") or {}
         if "latitude_deg" not in position or "longitude_deg" not in position:

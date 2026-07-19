@@ -79,6 +79,23 @@ class ApiClient {
     return Mission.fromJson((_decode(response) as Map).cast<String, dynamic>());
   }
 
+  Future<Mission> setMissionReady(String missionId, bool ready) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/v1/missions/$missionId/ready'),
+      headers: _jsonHeaders,
+      body: jsonEncode({'ready': ready}),
+    );
+    return Mission.fromJson((_decode(response) as Map).cast<String, dynamic>());
+  }
+
+  Future<void> deleteMission(String missionId) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/v1/missions/$missionId'),
+      headers: _headers,
+    );
+    _decode(response);
+  }
+
   Future<RouteRecording?> activeRecording(String boatId) async {
     final response = await _client.get(Uri.parse('$baseUrl/v1/boats/$boatId/recordings/active'), headers: _headers);
     final decoded = _decode(response);

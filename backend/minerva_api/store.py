@@ -53,6 +53,7 @@ class TelemetryStore:
                 status TEXT NOT NULL,
                 cruise_throttle REAL NOT NULL,
                 strategy TEXT NOT NULL DEFAULT 'balanced',
+                start_confirmed INTEGER NOT NULL DEFAULT 0,
                 waypoints TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 created_by TEXT NOT NULL,
@@ -88,6 +89,10 @@ class TelemetryStore:
         mission_columns = {row[1] for row in self._connection.execute("PRAGMA table_info(missions)")}
         if "strategy" not in mission_columns:
             self._connection.execute("ALTER TABLE missions ADD COLUMN strategy TEXT NOT NULL DEFAULT 'balanced'")
+        if "start_confirmed" not in mission_columns:
+            self._connection.execute(
+                "ALTER TABLE missions ADD COLUMN start_confirmed INTEGER NOT NULL DEFAULT 0"
+            )
 
     def insert(self, telemetry: Telemetry) -> bool:
         position = telemetry.data.get("position") or {}
@@ -113,6 +118,7 @@ class TelemetryStore:
             inserted = cursor.rowcount == 1
             if inserted:
                 self._update_alerts(telemetry)
+                self._sync_mission_authorization_from_telemetry(telemetry)
                 self._capture_active_recording(telemetry)
             return inserted
 
@@ -139,6 +145,29 @@ class TelemetryStore:
                     "INSERT INTO alerts(boat_id, code, severity, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)",
                     (telemetry.boat_id, code, status.get("severity", "warning"), telemetry.recorded_at, telemetry.recorded_at),
                 )
+
+    def _sync_mission_authorization_from_telemetry(self, telemetry: Telemetry) -> None:
+        control = telemetry.data.get("control") or {}
+        autopilot = telemetry.data.get("autopilot") or {}
+        safe_to_keep_authorized = (
+            control.get("mode") == "auto"
+            and bool(control.get("rc_healthy", False))
+            and bool(autopilot.get("latched", False))
+        )
+        if safe_to_keep_authorized:
+            return
+        self._connection.execute(
+            """
+            UPDATE missions
+            SET status = CASE WHEN status = 'active' THEN 'pending' ELSE status END,
+                start_confirmed = 0,
+                updated_at = ?
+            WHERE boat_id = ?
+              AND status IN ('pending', 'active')
+              AND (start_confirmed != 0 OR status = 'active')
+            """,
+            (telemetry.recorded_at, telemetry.boat_id),
+        )
 
     @staticmethod
     def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -240,8 +269,8 @@ class TelemetryStore:
                 """
                 INSERT INTO missions(
                     mission_id, boat_id, name, status, cruise_throttle, strategy,
-                    waypoints, created_at, created_by, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    start_confirmed, waypoints, created_at, created_by, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     mission["mission_id"],
@@ -250,6 +279,7 @@ class TelemetryStore:
                     mission["status"],
                     mission["cruise_throttle"],
                     mission.get("strategy", "balanced"),
+                    1 if mission.get("start_confirmed", False) else 0,
                     json.dumps(mission["waypoints"], separators=(",", ":")),
                     now,
                     actor,
@@ -264,6 +294,7 @@ class TelemetryStore:
     def _mission_row(row: sqlite3.Row) -> dict[str, Any]:
         value = dict(row)
         value["waypoints"] = json.loads(value["waypoints"])
+        value["start_confirmed"] = bool(value.get("start_confirmed", 0))
         return value
 
     def mission(self, mission_id: str) -> dict[str, Any] | None:
@@ -292,32 +323,94 @@ class TelemetryStore:
         ).fetchone()
         return self._mission_row(row) if row else None
 
+    def authorized_pending_mission(self, boat_id: str) -> dict[str, Any] | None:
+        row = self._connection.execute(
+            """
+            SELECT * FROM missions
+            WHERE boat_id = ? AND status = 'pending' AND start_confirmed = 1
+            ORDER BY updated_at LIMIT 1
+            """,
+            (boat_id,),
+        ).fetchone()
+        return self._mission_row(row) if row else None
+
     def activate_mission(self, mission_id: str, now: str) -> dict[str, Any] | None:
         mission = self.mission(mission_id)
         if mission is None:
             return None
+        active = self._connection.execute(
+            "SELECT mission_id FROM missions WHERE boat_id = ? AND status = 'active' AND mission_id != ? LIMIT 1",
+            (mission["boat_id"], mission_id),
+        ).fetchone()
+        if active is not None:
+            raise RuntimeError("an active mission must be stopped before another route is sent")
         with self._lock, self._connection:
             self._connection.execute(
                 """
-                UPDATE missions SET status = 'cancelled', updated_at = ?
+                UPDATE missions
+                SET status = 'cancelled', start_confirmed = 0, updated_at = ?
                 WHERE boat_id = ? AND status IN ('pending', 'active') AND mission_id != ?
                 """,
                 (now, mission["boat_id"], mission_id),
             )
             self._connection.execute(
-                "UPDATE missions SET status = 'pending', updated_at = ?, last_error = NULL WHERE mission_id = ?",
+                """
+                UPDATE missions
+                SET status = 'pending', start_confirmed = 0, updated_at = ?, last_error = NULL
+                WHERE mission_id = ?
+                """,
                 (now, mission_id),
             )
         return self.mission(mission_id)
+
+    def set_mission_ready(self, mission_id: str, ready: bool, now: str) -> dict[str, Any] | None:
+        mission = self.mission(mission_id)
+        if mission is None:
+            return None
+        if mission["status"] not in {"pending", "active"}:
+            raise RuntimeError("mission must be pending or active")
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE missions SET start_confirmed = ?, updated_at = ? WHERE mission_id = ?",
+                (1 if ready else 0, now, mission_id),
+            )
+        return self.mission(mission_id)
+
+    def delete_mission(self, mission_id: str) -> bool:
+        mission = self.mission(mission_id)
+        if mission is None:
+            return False
+        if mission["status"] == "active" or mission["start_confirmed"]:
+            raise RuntimeError("active or authorized mission cannot be deleted")
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE route_recordings SET mission_id = NULL WHERE mission_id = ?",
+                (mission_id,),
+            )
+            cursor = self._connection.execute(
+                "DELETE FROM missions WHERE mission_id = ?",
+                (mission_id,),
+            )
+        return cursor.rowcount == 1
 
     def update_mission_status(
         self, mission_id: str, mission_status: str, now: str, error: str | None = None
     ) -> dict[str, Any] | None:
         with self._lock, self._connection:
-            cursor = self._connection.execute(
-                "UPDATE missions SET status = ?, updated_at = ?, last_error = ? WHERE mission_id = ?",
-                (mission_status, now, error[:500] if error else None, mission_id),
-            )
+            if mission_status == "active":
+                cursor = self._connection.execute(
+                    "UPDATE missions SET status = ?, updated_at = ?, last_error = ? WHERE mission_id = ?",
+                    (mission_status, now, error[:500] if error else None, mission_id),
+                )
+            else:
+                cursor = self._connection.execute(
+                    """
+                    UPDATE missions
+                    SET status = ?, start_confirmed = 0, updated_at = ?, last_error = ?
+                    WHERE mission_id = ?
+                    """,
+                    (mission_status, now, error[:500] if error else None, mission_id),
+                )
         return self.mission(mission_id) if cursor.rowcount == 1 else None
 
     @staticmethod

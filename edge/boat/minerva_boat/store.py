@@ -154,6 +154,20 @@ class OutboxStore:
         result["status"] = "active"
         return result
 
+    def revoke_active_mission(self, boat_id: str) -> str | None:
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT mission_id FROM missions WHERE boat_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
+                (boat_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            self._connection.execute(
+                "UPDATE missions SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE mission_id = ?",
+                (row["mission_id"],),
+            )
+            return str(row["mission_id"])
+
     def set_mission_progress(self, mission_id: str, waypoint_index: int) -> None:
         with self._lock, self._connection:
             self._connection.execute(
@@ -202,7 +216,6 @@ class OutboxStore:
                 return
             latitude = float(position["latitude_deg"])
             longitude = float(position["longitude_deg"])
-            # Aproximadamente 2 m: evita uma nuvem de pontos quando o GPS esta parado.
             if last and abs(latitude - last["latitude"]) < 0.000018 and abs(longitude - last["longitude"]) < 0.000018:
                 return
             point_index = 0 if last is None else int(last["point_index"]) + 1

@@ -69,6 +69,8 @@ class Telemetry {
   String get controlMode => control['mode']?.toString() ?? 'desconhecido';
   bool get autopilotLatched => autopilot['latched'] as bool? ?? false;
   bool get autopilotArmed => autopilot['armed'] as bool? ?? controlMode == 'auto';
+  bool get rcHealthy => control['rc_healthy'] as bool? ?? false;
+
   bool get motorOn {
     final explicit = propulsion['motor_on'];
     if (explicit is bool) return explicit;
@@ -132,7 +134,9 @@ class Mission {
     required this.waypoints,
     required this.cruiseThrottle,
     required this.strategy,
+    required this.startConfirmed,
   });
+
   final String id;
   final String boatId;
   final String name;
@@ -140,6 +144,10 @@ class Mission {
   final List<MissionWaypoint> waypoints;
   final double cruiseThrottle;
   final String strategy;
+  final bool startConfirmed;
+
+  bool get isPrepared => status == 'pending' || status == 'active';
+  bool get canDelete => status != 'active' && !startConfirmed;
 
   factory Mission.fromJson(Map<String, dynamic> json) => Mission(
         id: json['mission_id'] as String,
@@ -151,6 +159,7 @@ class Mission {
             .toList(),
         cruiseThrottle: (json['cruise_throttle'] as num?)?.toDouble() ?? 0.45,
         strategy: json['strategy'] as String? ?? 'balanced',
+        startConfirmed: json['start_confirmed'] as bool? ?? false,
       );
 }
 
