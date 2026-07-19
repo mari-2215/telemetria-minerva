@@ -22,10 +22,11 @@ class MissionPlannerScreen extends StatefulWidget {
 }
 
 class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
-  final _name = TextEditingController(text: 'Rota de teste');
+  final _name = TextEditingController(text: 'Rota de prova');
   final List<LatLng> _points = [];
   late Future<List<Mission>> _missions = widget.client.missions(widget.boatId);
-  double _throttle = 0.45;
+  double _throttle = 0.55;
+  String _strategy = 'balanced';
   bool _saving = false;
   String? _error;
 
@@ -47,13 +48,18 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
       final mission = await widget.client.createMission(
         boatId: widget.boatId,
         name: _name.text.trim(),
-        waypoints: _points.map((point) => MissionWaypoint(latitude: point.latitude, longitude: point.longitude)).toList(),
+        waypoints: _points.map((point) => MissionWaypoint(latitude: point.latitude, longitude: point.longitude, toleranceM: 6)).toList(),
         cruiseThrottle: _throttle,
+        strategy: _strategy,
       );
       await widget.client.activateMission(mission.id);
       _points.clear();
       _reload();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rota enviada. A Raspberry vai baixar e salvar a missão.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Rota enviada. Coloque CH3 em AUTO e use o botão latch do rádio para iniciar.')),
+        );
+      }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -62,40 +68,61 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   }
 
   Color _statusColor(String status) => switch (status) {
-        'active' => Colors.greenAccent,
-        'pending' => Colors.lightBlueAccent,
-        'completed' => Colors.tealAccent,
-        'failed' => Colors.redAccent,
-        _ => Colors.white54,
+        'active' => Colors.green,
+        'pending' => Colors.blue,
+        'completed' => Colors.teal,
+        'failed' => Colors.red,
+        _ => Colors.blueGrey,
       };
+
+  String _strategyLabel(String strategy) => strategy == 'best_time' ? 'Melhor tempo' : 'Controle fino';
 
   @override
   Widget build(BuildContext context) {
-    final center = widget.initialPosition ?? const LatLng(-22.8622, -43.2302);
+    final center = widget.initialPosition ?? const LatLng(-26.3044, -48.8464);
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 68,
+        toolbarHeight: 72,
         title: MinervaAppBarTitle(title: 'Rotas · ${widget.boatId}'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 36),
         children: [
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text('Nova trajetória', style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 6),
                   const Text('Toque no mapa na ordem em que o barco deve visitar os pontos.'),
-                  const SizedBox(height: 12),
-                  TextField(controller: _name, decoration: const InputDecoration(labelText: 'Nome da rota', border: OutlineInputBorder())),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+                  TextField(controller: _name, decoration: const InputDecoration(labelText: 'Nome da rota')),
+                  const SizedBox(height: 14),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'balanced', icon: Icon(Icons.tune_rounded), label: Text('Controle fino')),
+                      ButtonSegment(value: 'best_time', icon: Icon(Icons.timer_rounded), label: Text('Melhor tempo')),
+                    ],
+                    selected: {_strategy},
+                    onSelectionChanged: (values) => setState(() => _strategy = values.first),
+                  ),
+                  const SizedBox(height: 10),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 400),
+                    child: Text(
+                      _strategy == 'best_time'
+                          ? 'O fuzzy mantém mais potência em retas e curvas médias, reduzindo apenas perto do waypoint ou com erro de rumo grande.'
+                          : 'O fuzzy prioriza estabilidade, suavidade e menor consumo durante as correções de rumo.',
+                      key: ValueKey(_strategy),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   SizedBox(
-                    height: 390,
+                    height: 410,
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(22),
                       child: FlutterMap(
                         options: MapOptions(
                           initialCenter: center,
@@ -104,17 +131,18 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                         ),
                         children: [
                           TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'br.org.minervanautica.telemetria'),
-                          if (_points.length > 1) PolylineLayer(polylines: [Polyline(points: _points, color: const Color(0xFF0284C7), strokeWidth: 5)]),
+                          if (_points.length > 1)
+                            PolylineLayer(polylines: [Polyline(points: _points, color: const Color(0xFF0B6CCB), strokeWidth: 6)]),
                           MarkerLayer(
                             markers: [
                               for (var index = 0; index < _points.length; index++)
                                 Marker(
                                   point: _points[index],
-                                  width: 38,
-                                  height: 38,
+                                  width: 42,
+                                  height: 42,
                                   child: Container(
                                     alignment: Alignment.center,
-                                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black),
+                                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF082B5C)),
                                     child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                   ),
                                 ),
@@ -127,39 +155,54 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                   Row(
                     children: [
                       Expanded(child: Text('${_points.length} waypoint(s)')),
-                      TextButton.icon(onPressed: _points.isEmpty ? null : () => setState(() => _points.removeLast()), icon: const Icon(Icons.undo), label: const Text('Desfazer')),
-                      TextButton.icon(onPressed: _points.isEmpty ? null : () => setState(_points.clear), icon: const Icon(Icons.delete_outline), label: const Text('Limpar')),
+                      TextButton.icon(onPressed: _points.isEmpty ? null : () => setState(() => _points.removeLast()), icon: const Icon(Icons.undo_rounded), label: const Text('Desfazer')),
+                      TextButton.icon(onPressed: _points.isEmpty ? null : () => setState(_points.clear), icon: const Icon(Icons.delete_outline_rounded), label: const Text('Limpar')),
                     ],
                   ),
-                  Text('Potência de cruzeiro: ${(_throttle * 100).round()}%'),
-                  Slider(value: _throttle, min: 0.15, max: 0.75, divisions: 12, onChanged: (value) => setState(() => _throttle = value)),
+                  Text('Limite de potência: ${(_throttle * 100).round()}%'),
+                  Slider(
+                    value: _throttle,
+                    min: 0.15,
+                    max: 0.85,
+                    divisions: 14,
+                    label: '${(_throttle * 100).round()}%',
+                    onChanged: (value) => setState(() => _throttle = value),
+                  ),
                   if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   const SizedBox(height: 8),
-                  FilledButton.icon(onPressed: _saving ? null : _saveAndActivate, icon: const Icon(Icons.send), label: Text(_saving ? 'Enviando...' : 'Salvar e enviar ao barco')),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _saveAndActivate,
+                    icon: const Icon(Icons.rocket_launch_rounded),
+                    label: Text(_saving ? 'Enviando...' : 'Salvar e deixar pronta'),
+                  ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Text('Rotas salvas', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
           FutureBuilder<List<Mission>>(
             future: _missions,
             builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
+              }
               if (snapshot.hasError) return Text('Falha ao carregar rotas: ${snapshot.error}');
               final missions = snapshot.data ?? const [];
               if (missions.isEmpty) return const Padding(padding: EdgeInsets.all(16), child: Text('Nenhuma rota salva ainda.'));
               return Column(
                 children: missions.map((mission) => Card(
                   child: ListTile(
-                    leading: Icon(Icons.route, color: _statusColor(mission.status)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                    leading: Icon(Icons.route_rounded, color: _statusColor(mission.status)),
                     title: Text(mission.name),
-                    subtitle: Text('${mission.waypoints.length} pontos · ${mission.status} · ${(mission.cruiseThrottle * 100).round()}%'),
+                    subtitle: Text('${mission.waypoints.length} pontos · ${_strategyLabel(mission.strategy)} · ${(mission.cruiseThrottle * 100).round()}% · ${mission.status}'),
                     trailing: mission.status == 'active' || mission.status == 'pending'
                         ? null
                         : IconButton(
-                            tooltip: 'Enviar esta rota',
-                            icon: const Icon(Icons.send),
+                            tooltip: 'Preparar esta rota',
+                            icon: const Icon(Icons.send_rounded),
                             onPressed: () async { await widget.client.activateMission(mission.id); _reload(); },
                           ),
                   ),

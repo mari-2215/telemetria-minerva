@@ -8,13 +8,30 @@ import os
 from fastapi import Depends, Header, HTTPException, status
 
 
-ROLES = {"admin", "operator", "laboratory", "read"}
+ROLES = {"admin", "operator", "laboratory", "read", "captain", "crew"}
 
 
 @dataclass(frozen=True, slots=True)
 class Principal:
     name: str
     role: str
+
+    @property
+    def is_captain(self) -> bool:
+        return self.role in {"admin", "operator", "captain"}
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilitySet:
+    can_control: bool
+    can_acknowledge_alerts: bool
+
+
+def capabilities_for(principal: Principal) -> CapabilitySet:
+    return CapabilitySet(
+        can_control=principal.role in {"admin", "operator", "captain"},
+        can_acknowledge_alerts=principal.role in {"admin", "operator", "captain", "laboratory"},
+    )
 
 
 def configured_tokens() -> dict[str, Principal]:

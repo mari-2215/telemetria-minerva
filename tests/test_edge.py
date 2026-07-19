@@ -49,6 +49,7 @@ class EdgeServiceTest(unittest.TestCase):
             value = json.loads(payload())
             value["position"]["course_deg"] = 0.0
             value["control"] = {"mode": "auto", "rc_healthy": True}
+            value["autopilot"] = {"latched": True}
             frame_bytes = MissionAutopilot(store, "azimutal-01").build_command(Telemetry.from_dict(value), now=1.0)
             self.assertIsNotNone(frame_bytes)
             frame = FrameDecoder().feed(frame_bytes)[0]

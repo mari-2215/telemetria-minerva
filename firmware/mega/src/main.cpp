@@ -15,6 +15,7 @@ namespace {
 constexpr uint8_t kRudderInputPin = 2;
 constexpr uint8_t kThrottleInputPin = 3;
 constexpr uint8_t kModeInputPin = 18;
+constexpr uint8_t kAutopilotLatchInputPin = 19;
 
 constexpr uint8_t kServo1Pin = 9;
 constexpr uint8_t kEscPin = 10;
@@ -33,6 +34,8 @@ constexpr uint16_t kRcDeadbandUs = 35;
 constexpr uint32_t kRcTimeoutUs = 120000UL;
 constexpr uint16_t kModeManualMaxUs = 1300;
 constexpr uint16_t kModeAutoMinUs = 1700;
+constexpr uint16_t kLatchHighUs = 1700;
+constexpr uint32_t kLatchDebounceMs = 250;
 
 constexpr float kForwardCenterDeg = 45.0F;
 constexpr float kReverseCenterDeg = 225.0F;
@@ -80,9 +83,11 @@ struct RcSnapshot {
   uint16_t rudderUs;
   uint16_t throttleUs;
   uint16_t modeUs;
+  uint16_t latchUs;
   uint32_t rudderLastUs;
   uint32_t throttleLastUs;
   uint32_t modeLastUs;
+  uint32_t latchLastUs;
 };
 
 struct AutopilotState {
@@ -99,6 +104,7 @@ struct AutopilotState {
 RcChannel rudderChannel = {kRudderInputPin, 0, kRcCenterUs, 0};
 RcChannel throttleChannel = {kThrottleInputPin, 0, kRcCenterUs, 0};
 RcChannel modeChannel = {kModeInputPin, 0, kRcCenterUs, 0};
+RcChannel latchChannel = {kAutopilotLatchInputPin, 0, kRcMinUs, 0};
 
 Servo servo1;
 Servo servo2;
@@ -114,6 +120,9 @@ bool recordingActive = false;
 bool failsafeActive = true;
 bool invalidCommandAlarm = false;
 bool commandTimeoutLatched = false;
+bool autopilotLatched = false;
+bool latchWasHigh = false;
+uint32_t lastLatchToggleMs = 0;
 ControlMode controlMode = ControlMode::Failsafe;
 
 float currentPodDeg = kSafePodDeg;
@@ -231,6 +240,7 @@ void captureChannel(RcChannel& channel) {
 void onRudderChange() { captureChannel(rudderChannel); }
 void onThrottleChange() { captureChannel(throttleChannel); }
 void onModeChange() { captureChannel(modeChannel); }
+void onLatchChange() { captureChannel(latchChannel); }
 
 RcSnapshot readRcSnapshot() {
   RcSnapshot value;
@@ -238,9 +248,11 @@ RcSnapshot readRcSnapshot() {
   value.rudderUs = rudderChannel.pulseUs;
   value.throttleUs = throttleChannel.pulseUs;
   value.modeUs = modeChannel.pulseUs;
+  value.latchUs = latchChannel.pulseUs;
   value.rudderLastUs = rudderChannel.lastPulseUs;
   value.throttleLastUs = throttleChannel.lastPulseUs;
   value.modeLastUs = modeChannel.lastPulseUs;
+  value.latchLastUs = latchChannel.lastPulseUs;
   interrupts();
   return value;
 }
@@ -273,6 +285,26 @@ ControlMode requestedMode(const RcSnapshot& value, bool healthy) {
   if (value.modeUs < kModeManualMaxUs) return ControlMode::Manual;
   if (value.modeUs > kModeAutoMinUs) return ControlMode::Auto;
   return ControlMode::Record;
+}
+
+void updateAutopilotLatch(const RcSnapshot& value, uint32_t nowMs) {
+  const bool latchHealthy = pulseHealthy(value.latchUs, value.latchLastUs, micros());
+  const bool latchHigh = latchHealthy && value.latchUs >= kLatchHighUs;
+  if (controlMode != ControlMode::Auto) {
+    if (autopilotLatched) sendEvent("AUTOPILOT_LATCH_RELEASED");
+    autopilotLatched = false;
+    latchWasHigh = latchHigh;
+    return;
+  }
+  if (latchHigh && !latchWasHigh && nowMs - lastLatchToggleMs >= kLatchDebounceMs) {
+    autopilotLatched = !autopilotLatched;
+    lastLatchToggleMs = nowMs;
+    autopilot.hasCommand = false;
+    currentEscUs = kEscStopUs;
+    esc.writeMicroseconds(currentEscUs);
+    sendEvent(autopilotLatched ? "AUTOPILOT_LATCHED" : "AUTOPILOT_UNLATCHED");
+  }
+  latchWasHigh = latchHigh;
 }
 
 uint16_t angleToServoUs(float logicalAngle, uint16_t minimum, uint16_t maximum, bool inverted) {
@@ -342,6 +374,10 @@ void handleAutopilotPayload(const uint8_t* payload, uint16_t length, uint32_t fr
   }
   if (!rcHealthy) {
     rejectCommand(commandSequence, "rc_unhealthy");
+    return;
+  }
+  if (!autopilotLatched) {
+    rejectCommand(commandSequence, "autopilot_not_latched");
     return;
   }
   if (autopilot.hasCommand && static_cast<int32_t>(commandSequence - autopilot.commandSequence) <= 0) {
@@ -470,6 +506,7 @@ void transitionMode(ControlMode nextMode) {
   if (nextMode == ControlMode::Auto) sendEvent("AUTOPILOT_ENABLED");
   recordingActive = nextMode == ControlMode::Record;
   if (previous == ControlMode::Auto || nextMode == ControlMode::Auto) {
+    autopilotLatched = false;
     autopilot.hasCommand = false;
     currentEscUs = kEscStopUs;
     esc.writeMicroseconds(currentEscUs);
@@ -487,6 +524,7 @@ void updateControl(uint32_t nowMs) {
     rcHealthy = healthy;
   }
   transitionMode(requestedMode(snapshot, healthy));
+  updateAutopilotLatch(snapshot, nowMs);
 
   uint16_t requestedEscUs = kEscStopUs;
   float requestedPodDeg = kSafePodDeg;
@@ -508,7 +546,7 @@ void updateControl(uint32_t nowMs) {
       commandTimeoutLatched = true;
       sendEvent("COMMAND_TIMEOUT");
     }
-    if (fresh && gpsValidForAutopilot()) {
+    if (autopilotLatched && fresh && gpsValidForAutopilot()) {
       requestedPodDeg = autopilot.targetPodDeg;
       requestedThrottle = autopilot.throttleNorm;
       requestedEscUs = clampU16(
@@ -605,9 +643,13 @@ void transmitTelemetry(uint32_t nowMs) {
   control["rudder_pwm_us"] = rc.rudderUs;
   control["throttle_pwm_us"] = rc.throttleUs;
   control["mode_pwm_us"] = rc.modeUs;
+  control["latch_pwm_us"] = rc.latchUs;
+  control["latch_channel_healthy"] = pulseHealthy(rc.latchUs, rc.latchLastUs, micros());
 
   JsonObject autoState = telemetryDocument["autopilot"].to<JsonObject>();
-  autoState["enabled"] = controlMode == ControlMode::Auto;
+  autoState["armed"] = controlMode == ControlMode::Auto;
+  autoState["latched"] = autopilotLatched;
+  autoState["enabled"] = controlMode == ControlMode::Auto && autopilotLatched;
   autoState["command_fresh"] = fresh;
   autoState["last_command_sequence"] = autopilot.commandSequence;
   autoState["command_age_ms"] = autopilot.hasCommand ? nowMs - autopilot.receivedAtMs : 0;
@@ -623,6 +665,7 @@ void transmitTelemetry(uint32_t nowMs) {
   propulsion["servo1_pwm_us"] = currentServo1Us;
   propulsion["servo2_pwm_us"] = currentServo2Us;
   propulsion["esc_pwm_us"] = currentEscUs;
+  propulsion["motor_on"] = currentEscUs > kEscStopUs + 15;
 
   JsonObject status = telemetryDocument["status"].to<JsonObject>();
   JsonArray alarms = status["alarms"].to<JsonArray>();
@@ -664,6 +707,7 @@ void setup() {
   pinMode(kRudderInputPin, INPUT);
   pinMode(kThrottleInputPin, INPUT);
   pinMode(kModeInputPin, INPUT);
+  pinMode(kAutopilotLatchInputPin, INPUT);
   pinMode(kWaterPin, INPUT_PULLUP);
 
   Serial.begin(115200);   // USB: somente MinervaFrame binario, sem mensagens de debug.
@@ -685,6 +729,7 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(kRudderInputPin), onRudderChange, CHANGE);
   attachInterrupt(digitalPinToInterrupt(kThrottleInputPin), onThrottleChange, CHANGE);
   attachInterrupt(digitalPinToInterrupt(kModeInputPin), onModeChange, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(kAutopilotLatchInputPin), onLatchChange, CHANGE);
 }
 
 void loop() {

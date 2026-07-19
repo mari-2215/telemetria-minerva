@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import sqlite3
 import threading
@@ -51,6 +52,7 @@ class TelemetryStore:
                 name TEXT NOT NULL,
                 status TEXT NOT NULL,
                 cruise_throttle REAL NOT NULL,
+                strategy TEXT NOT NULL DEFAULT 'balanced',
                 waypoints TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 created_by TEXT NOT NULL,
@@ -59,8 +61,33 @@ class TelemetryStore:
             );
             CREATE INDEX IF NOT EXISTS idx_missions_boat_status
                 ON missions(boat_id, status, created_at DESC);
+            CREATE TABLE IF NOT EXISTS route_recordings (
+                recording_id TEXT PRIMARY KEY,
+                boat_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                cruise_throttle REAL NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                created_by TEXT NOT NULL,
+                mission_id TEXT
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_recording_per_boat
+                ON route_recordings(boat_id) WHERE status = 'recording';
+            CREATE TABLE IF NOT EXISTS route_recording_points (
+                recording_id TEXT NOT NULL REFERENCES route_recordings(recording_id) ON DELETE CASCADE,
+                point_index INTEGER NOT NULL,
+                recorded_at TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                PRIMARY KEY(recording_id, point_index)
+            );
             """
         )
+        mission_columns = {row[1] for row in self._connection.execute("PRAGMA table_info(missions)")}
+        if "strategy" not in mission_columns:
+            self._connection.execute("ALTER TABLE missions ADD COLUMN strategy TEXT NOT NULL DEFAULT 'balanced'")
 
     def insert(self, telemetry: Telemetry) -> bool:
         position = telemetry.data.get("position") or {}
@@ -86,6 +113,7 @@ class TelemetryStore:
             inserted = cursor.rowcount == 1
             if inserted:
                 self._update_alerts(telemetry)
+                self._capture_active_recording(telemetry)
             return inserted
 
     def _update_alerts(self, telemetry: Telemetry) -> None:
@@ -111,6 +139,51 @@ class TelemetryStore:
                     "INSERT INTO alerts(boat_id, code, severity, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)",
                     (telemetry.boat_id, code, status.get("severity", "warning"), telemetry.recorded_at, telemetry.recorded_at),
                 )
+
+    @staticmethod
+    def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        radius_m = 6_371_000.0
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+        value = math.sin(delta_phi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
+        return radius_m * 2.0 * math.atan2(math.sqrt(value), math.sqrt(max(0.0, 1.0 - value)))
+
+    def _capture_active_recording(self, telemetry: Telemetry) -> None:
+        position = telemetry.data.get("position") or {}
+        if "latitude_deg" not in position or "longitude_deg" not in position:
+            return
+        active = self._connection.execute(
+            "SELECT recording_id FROM route_recordings WHERE boat_id = ? AND status = 'recording'",
+            (telemetry.boat_id,),
+        ).fetchone()
+        if active is None:
+            return
+        recording_id = active["recording_id"]
+        last = self._connection.execute(
+            """
+            SELECT point_index, latitude, longitude
+            FROM route_recording_points
+            WHERE recording_id = ?
+            ORDER BY point_index DESC LIMIT 1
+            """,
+            (recording_id,),
+        ).fetchone()
+        if last and int(last["point_index"]) >= 4999:
+            return
+        latitude = float(position["latitude_deg"])
+        longitude = float(position["longitude_deg"])
+        if last and self._distance_m(float(last["latitude"]), float(last["longitude"]), latitude, longitude) < 1.8:
+            return
+        point_index = 0 if last is None else int(last["point_index"]) + 1
+        self._connection.execute(
+            """
+            INSERT INTO route_recording_points(recording_id, point_index, recorded_at, latitude, longitude)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (recording_id, point_index, telemetry.recorded_at, latitude, longitude),
+        )
 
     def boats(self) -> list[dict[str, Any]]:
         rows = self._connection.execute(
@@ -166,9 +239,9 @@ class TelemetryStore:
             self._connection.execute(
                 """
                 INSERT INTO missions(
-                    mission_id, boat_id, name, status, cruise_throttle,
+                    mission_id, boat_id, name, status, cruise_throttle, strategy,
                     waypoints, created_at, created_by, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     mission["mission_id"],
@@ -176,6 +249,7 @@ class TelemetryStore:
                     mission["name"],
                     mission["status"],
                     mission["cruise_throttle"],
+                    mission.get("strategy", "balanced"),
                     json.dumps(mission["waypoints"], separators=(",", ":")),
                     now,
                     actor,
@@ -245,6 +319,134 @@ class TelemetryStore:
                 (mission_status, now, error[:500] if error else None, mission_id),
             )
         return self.mission(mission_id) if cursor.rowcount == 1 else None
+
+    @staticmethod
+    def _recording_row(row: sqlite3.Row, points: list[sqlite3.Row]) -> dict[str, Any]:
+        value = dict(row)
+        value["points"] = [
+            {
+                "latitude_deg": float(point["latitude"]),
+                "longitude_deg": float(point["longitude"]),
+                "recorded_at": point["recorded_at"],
+            }
+            for point in points
+        ]
+        value["point_count"] = len(points)
+        return value
+
+    def recording(self, recording_id: str) -> dict[str, Any] | None:
+        row = self._connection.execute(
+            "SELECT * FROM route_recordings WHERE recording_id = ?", (recording_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        points = self._connection.execute(
+            "SELECT * FROM route_recording_points WHERE recording_id = ? ORDER BY point_index",
+            (recording_id,),
+        ).fetchall()
+        return self._recording_row(row, points)
+
+    def active_recording(self, boat_id: str) -> dict[str, Any] | None:
+        row = self._connection.execute(
+            "SELECT * FROM route_recordings WHERE boat_id = ? AND status = 'recording'",
+            (boat_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        points = self._connection.execute(
+            "SELECT * FROM route_recording_points WHERE recording_id = ? ORDER BY point_index",
+            (row["recording_id"],),
+        ).fetchall()
+        return self._recording_row(row, points)
+
+    def start_recording(
+        self,
+        recording_id: str,
+        boat_id: str,
+        name: str,
+        strategy: str,
+        cruise_throttle: float,
+        actor: str,
+        now: str,
+    ) -> dict[str, Any]:
+        if strategy not in {"balanced", "best_time"}:
+            raise ValueError("invalid strategy")
+        if not 0.0 <= cruise_throttle <= 1.0:
+            raise ValueError("invalid cruise throttle")
+        with self._lock, self._connection:
+            active = self._connection.execute(
+                "SELECT recording_id FROM route_recordings WHERE boat_id = ? AND status = 'recording'",
+                (boat_id,),
+            ).fetchone()
+            if active is not None:
+                raise RuntimeError("recording already active")
+            self._connection.execute(
+                """
+                INSERT INTO route_recordings(
+                    recording_id, boat_id, name, status, strategy,
+                    cruise_throttle, started_at, created_by
+                ) VALUES (?, ?, ?, 'recording', ?, ?, ?, ?)
+                """,
+                (recording_id, boat_id, name[:80], strategy, cruise_throttle, now, actor),
+            )
+        created = self.recording(recording_id)
+        assert created is not None
+        return created
+
+    @staticmethod
+    def _downsample_points(points: list[sqlite3.Row], limit: int = 200) -> list[sqlite3.Row]:
+        if len(points) <= limit:
+            return points
+        indexes = [round(index * (len(points) - 1) / (limit - 1)) for index in range(limit)]
+        return [points[index] for index in indexes]
+
+    def stop_recording(self, recording_id: str, actor: str, now: str) -> dict[str, Any] | None:
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT * FROM route_recordings WHERE recording_id = ?", (recording_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            if row["status"] != "recording":
+                raise RuntimeError("recording is not active")
+            points = self._connection.execute(
+                "SELECT * FROM route_recording_points WHERE recording_id = ? ORDER BY point_index",
+                (recording_id,),
+            ).fetchall()
+            if len(points) < 2:
+                raise ValueError("recording needs at least two GPS points")
+            self._connection.execute(
+                "UPDATE route_recordings SET status = 'ready', finished_at = ? WHERE recording_id = ?",
+                (now, recording_id),
+            )
+
+        sampled = self._downsample_points(points)
+        mission_id = f"route-{recording_id}"[:32]
+        mission = {
+            "mission_id": mission_id,
+            "boat_id": row["boat_id"],
+            "name": row["name"],
+            "status": "draft",
+            "cruise_throttle": float(row["cruise_throttle"]),
+            "strategy": row["strategy"],
+            "waypoints": [
+                {
+                    "latitude_deg": float(point["latitude"]),
+                    "longitude_deg": float(point["longitude"]),
+                    "tolerance_m": 6.0,
+                }
+                for point in sampled
+            ],
+        }
+        created_mission = self.create_mission(mission, actor, now)
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE route_recordings SET mission_id = ? WHERE recording_id = ?",
+                (mission_id, recording_id),
+            )
+        recording = self.recording(recording_id)
+        assert recording is not None
+        return {"recording": recording, "mission": created_mission}
 
     def close(self) -> None:
         self._connection.close()

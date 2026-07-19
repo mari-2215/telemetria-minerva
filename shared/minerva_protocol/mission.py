@@ -14,6 +14,7 @@ class MissionValidationError(ValueError):
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+_MISSION_STRATEGIES = {"balanced", "best_time"}
 
 
 def _finite_number(value: Any, name: str) -> float:
@@ -57,6 +58,7 @@ class Mission:
     waypoints: tuple[Waypoint, ...]
     cruise_throttle: float = 0.45
     status: str = "draft"
+    strategy: str = "balanced"
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "Mission":
@@ -65,6 +67,7 @@ class Mission:
         name = value.get("name")
         raw_waypoints = value.get("waypoints")
         status = value.get("status", "draft")
+        strategy = value.get("strategy", "balanced")
         if not isinstance(mission_id, str) or not 1 <= len(mission_id) <= 32 or not _SAFE_ID.fullmatch(mission_id):
             raise MissionValidationError("mission_id must contain 1 to 32 characters")
         if not isinstance(boat_id, str) or not 1 <= len(boat_id) <= 32 or not _SAFE_ID.fullmatch(boat_id):
@@ -75,6 +78,8 @@ class Mission:
             raise MissionValidationError("mission must contain 1 to 200 waypoints")
         if status not in {"draft", "pending", "active", "completed", "cancelled", "failed"}:
             raise MissionValidationError("invalid mission status")
+        if strategy not in _MISSION_STRATEGIES:
+            raise MissionValidationError("strategy must be balanced or best_time")
         throttle = _finite_number(value.get("cruise_throttle", 0.45), "cruise_throttle")
         if not 0.0 <= throttle <= 1.0:
             raise MissionValidationError("cruise_throttle must be between 0 and 1")
@@ -82,7 +87,7 @@ class Mission:
             waypoints = tuple(Waypoint.from_dict(item) for item in raw_waypoints)
         except (TypeError, AttributeError) as exc:
             raise MissionValidationError("each waypoint must be an object") from exc
-        return cls(mission_id, boat_id, name.strip(), waypoints, throttle, status)
+        return cls(mission_id, boat_id, name.strip(), waypoints, throttle, status, strategy)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -91,6 +96,7 @@ class Mission:
             "name": self.name,
             "waypoints": [item.to_dict() for item in self.waypoints],
             "cruise_throttle": self.cruise_throttle,
+            "strategy": self.strategy,
             "status": self.status,
         }
 

@@ -23,6 +23,11 @@ class ApiClient {
   Map<String, String> get _headers => {'Authorization': 'Bearer $token'};
   Map<String, String> get _jsonHeaders => {..._headers, 'Content-Type': 'application/json'};
 
+  Future<UserProfile> me() async {
+    final response = await _client.get(Uri.parse('$baseUrl/v1/me'), headers: _headers);
+    return UserProfile.fromJson((_decode(response) as Map).cast<String, dynamic>());
+  }
+
   Future<List<BoatSummary>> boats() async {
     final response = await _client.get(Uri.parse('$baseUrl/v1/boats'), headers: _headers);
     final decoded = _decode(response) as List<dynamic>;
@@ -53,6 +58,7 @@ class ApiClient {
     required String name,
     required List<MissionWaypoint> waypoints,
     required double cruiseThrottle,
+    required String strategy,
   }) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/v1/missions'),
@@ -62,6 +68,7 @@ class ApiClient {
         'name': name,
         'waypoints': waypoints.map((value) => value.toJson()).toList(),
         'cruise_throttle': cruiseThrottle,
+        'strategy': strategy,
       }),
     );
     return Mission.fromJson((_decode(response) as Map).cast<String, dynamic>());
@@ -72,10 +79,45 @@ class ApiClient {
     return Mission.fromJson((_decode(response) as Map).cast<String, dynamic>());
   }
 
+  Future<RouteRecording?> activeRecording(String boatId) async {
+    final response = await _client.get(Uri.parse('$baseUrl/v1/boats/$boatId/recordings/active'), headers: _headers);
+    final decoded = _decode(response);
+    if (decoded == null) return null;
+    return RouteRecording.fromJson((decoded as Map).cast<String, dynamic>());
+  }
+
+  Future<RouteRecording> startRecording({
+    required String boatId,
+    required String name,
+    required double cruiseThrottle,
+    required String strategy,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/v1/boats/$boatId/recordings/start'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        'name': name,
+        'cruise_throttle': cruiseThrottle,
+        'strategy': strategy,
+      }),
+    );
+    return RouteRecording.fromJson((_decode(response) as Map).cast<String, dynamic>());
+  }
+
+  Future<Mission> stopRecording(String recordingId) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/v1/recordings/$recordingId/stop'),
+      headers: _headers,
+    );
+    final decoded = (_decode(response) as Map).cast<String, dynamic>();
+    return Mission.fromJson((decoded['mission'] as Map).cast<String, dynamic>());
+  }
+
   dynamic _decode(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException('Servidor respondeu ${response.statusCode}: ${response.body}');
     }
+    if (response.bodyBytes.isEmpty) return null;
     return jsonDecode(utf8.decode(response.bodyBytes));
   }
 

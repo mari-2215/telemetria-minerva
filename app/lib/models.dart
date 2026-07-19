@@ -1,5 +1,29 @@
 import 'dart:math' as math;
 
+class UserProfile {
+  const UserProfile({
+    required this.name,
+    required this.role,
+    required this.canControl,
+    required this.canAcknowledgeAlerts,
+  });
+
+  final String name;
+  final String role;
+  final bool canControl;
+  final bool canAcknowledgeAlerts;
+
+  bool get isCaptain => canControl;
+  String get label => isCaptain ? 'CAPITÃO' : 'TRIPULAÇÃO';
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
+        name: json['name'] as String? ?? 'Usuário',
+        role: json['role'] as String? ?? 'crew',
+        canControl: json['can_control'] as bool? ?? false,
+        canAcknowledgeAlerts: json['can_acknowledge_alerts'] as bool? ?? false,
+      );
+}
+
 class BoatSummary {
   const BoatSummary({
     required this.id,
@@ -8,7 +32,6 @@ class BoatSummary {
     this.latitude,
     this.longitude,
   });
-
   final String id;
   final DateTime recordedAt;
   final String severity;
@@ -26,7 +49,6 @@ class BoatSummary {
 
 class Telemetry {
   const Telemetry({required this.raw});
-
   final Map<String, dynamic> raw;
 
   String get boatId => raw['boat_id'] as String;
@@ -45,6 +67,15 @@ class Telemetry {
   double? get longitude => (position['longitude_deg'] as num?)?.toDouble();
   double? get temperatureC => (environment['electronics_temp_c'] as num?)?.toDouble();
   String get controlMode => control['mode']?.toString() ?? 'desconhecido';
+  bool get autopilotLatched => autopilot['latched'] as bool? ?? false;
+  bool get autopilotArmed => autopilot['armed'] as bool? ?? controlMode == 'auto';
+  bool get motorOn {
+    final explicit = propulsion['motor_on'];
+    if (explicit is bool) return explicit;
+    final esc = (propulsion['esc_pwm_us'] as num?)?.toDouble();
+    if (esc != null) return esc > 1020;
+    return ((propulsion['throttle_norm'] as num?)?.toDouble() ?? 0).abs() > 0.02;
+  }
 
   double? _motionNumber(String key) {
     final value = (motion[key] as num?)?.toDouble();
@@ -69,9 +100,7 @@ class Telemetry {
   }
 
   double? get yawDeg => _motionNumber('yaw_deg');
-
   List<String> get alarms => ((status['alarms'] as List?) ?? const []).map((value) => value.toString()).toList();
-
   factory Telemetry.fromJson(Map<String, dynamic> json) => Telemetry(raw: json);
 }
 
@@ -102,6 +131,7 @@ class Mission {
     required this.status,
     required this.waypoints,
     required this.cruiseThrottle,
+    required this.strategy,
   });
   final String id;
   final String boatId;
@@ -109,6 +139,7 @@ class Mission {
   final String status;
   final List<MissionWaypoint> waypoints;
   final double cruiseThrottle;
+  final String strategy;
 
   factory Mission.fromJson(Map<String, dynamic> json) => Mission(
         id: json['mission_id'] as String,
@@ -119,5 +150,41 @@ class Mission {
             .map((value) => MissionWaypoint.fromJson((value as Map).cast<String, dynamic>()))
             .toList(),
         cruiseThrottle: (json['cruise_throttle'] as num?)?.toDouble() ?? 0.45,
+        strategy: json['strategy'] as String? ?? 'balanced',
+      );
+}
+
+class RouteRecording {
+  const RouteRecording({
+    required this.id,
+    required this.boatId,
+    required this.name,
+    required this.status,
+    required this.points,
+    required this.startedAt,
+    required this.cruiseThrottle,
+    required this.strategy,
+  });
+
+  final String id;
+  final String boatId;
+  final String name;
+  final String status;
+  final List<MissionWaypoint> points;
+  final DateTime startedAt;
+  final double cruiseThrottle;
+  final String strategy;
+
+  factory RouteRecording.fromJson(Map<String, dynamic> json) => RouteRecording(
+        id: json['recording_id'] as String,
+        boatId: json['boat_id'] as String,
+        name: json['name'] as String,
+        status: json['status'] as String,
+        points: ((json['points'] as List?) ?? const [])
+            .map((value) => MissionWaypoint.fromJson((value as Map).cast<String, dynamic>()))
+            .toList(),
+        startedAt: DateTime.parse(json['started_at'] as String),
+        cruiseThrottle: (json['cruise_throttle'] as num?)?.toDouble() ?? 0.45,
+        strategy: json['strategy'] as String? ?? 'balanced',
       );
 }

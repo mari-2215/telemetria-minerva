@@ -13,7 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from minerva_protocol import Mission, MissionValidationError, Telemetry, TelemetryValidationError, decode_base64_lora_payload
 
 from .store import TelemetryStore
-from .auth import Principal, authenticate_token, current_principal, require_roles
+from .auth import Principal, authenticate_token, capabilities_for, current_principal, require_roles
+
+
+CAPTAIN_ROLES = ("admin", "operator", "captain")
+ALERT_ROLES = ("admin", "operator", "captain", "laboratory")
 
 
 class ConnectionManager:
@@ -55,7 +59,7 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         if owned_store and app.state.store is not None:
             app.state.store.close()
 
-    app = FastAPI(title="Telemetria Minerva API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Telemetria Minerva API", version="0.2.0", lifespan=lifespan)
     app.state.store = store
     app.state.connections = ConnectionManager()
     origins = [value.strip() for value in os.getenv("MINERVA_CORS_ORIGINS", "http://localhost:3000").split(",") if value.strip()]
@@ -118,8 +122,14 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         return {"accepted": inserted, "duplicate": not inserted}
 
     @app.get("/v1/me")
-    def me(principal: Principal = Depends(current_principal)) -> dict[str, str]:
-        return {"name": principal.name, "role": principal.role}
+    def me(principal: Principal = Depends(current_principal)) -> dict[str, Any]:
+        capabilities = capabilities_for(principal)
+        return {
+            "name": principal.name,
+            "role": principal.role,
+            "can_control": capabilities.can_control,
+            "can_acknowledge_alerts": capabilities.can_acknowledge_alerts,
+        }
 
     @app.get("/v1/boats", dependencies=[Depends(current_principal)])
     def boats(telemetry_store: TelemetryStore = Depends(current_store)) -> list[dict[str, Any]]:
@@ -153,7 +163,7 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
     @app.post("/v1/alerts/{alert_id}/ack")
     def acknowledge_alert(
         alert_id: int,
-        principal: Principal = Depends(require_roles("admin", "operator", "laboratory")),
+        principal: Principal = Depends(require_roles(*ALERT_ROLES)),
         telemetry_store: TelemetryStore = Depends(current_store),
     ) -> dict[str, bool]:
         acknowledged = telemetry_store.acknowledge_alert(alert_id, Telemetry.utc_now(), principal.name)
@@ -164,7 +174,7 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
     @app.post("/v1/missions", status_code=status.HTTP_201_CREATED)
     def create_mission(
         payload: dict[str, Any],
-        principal: Principal = Depends(require_roles("admin", "operator", "laboratory")),
+        principal: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
         telemetry_store: TelemetryStore = Depends(current_store),
     ) -> dict[str, Any]:
         candidate = dict(payload)
@@ -192,13 +202,62 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
     @app.post("/v1/missions/{mission_id}/activate")
     def activate_mission(
         mission_id: str,
-        _: Principal = Depends(require_roles("admin", "operator", "laboratory")),
+        _: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
         telemetry_store: TelemetryStore = Depends(current_store),
     ) -> dict[str, Any]:
         mission = telemetry_store.activate_mission(mission_id, Telemetry.utc_now())
         if mission is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
         return mission
+
+    @app.get("/v1/boats/{boat_id}/recordings/active")
+    def active_recording(
+        boat_id: str,
+        _: Principal = Depends(current_principal),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any] | None:
+        return telemetry_store.active_recording(boat_id)
+
+    @app.post("/v1/boats/{boat_id}/recordings/start", status_code=status.HTTP_201_CREATED)
+    def start_recording(
+        boat_id: str,
+        payload: dict[str, Any],
+        principal: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        name = str(payload.get("name") or "Trajetória de prova").strip()
+        strategy = str(payload.get("strategy") or "balanced")
+        try:
+            cruise_throttle = float(payload.get("cruise_throttle", 0.45))
+            return telemetry_store.start_recording(
+                recording_id=f"rec-{uuid4().hex[:16]}",
+                boat_id=boat_id,
+                name=name,
+                strategy=strategy,
+                cruise_throttle=cruise_throttle,
+                actor=principal.name,
+                now=Telemetry.utc_now(),
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+    @app.post("/v1/recordings/{recording_id}/stop")
+    def stop_recording(
+        recording_id: str,
+        principal: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        try:
+            result = telemetry_store.stop_recording(recording_id, principal.name, Telemetry.utc_now())
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="recording not found")
+        return result
 
     @app.get("/v1/boats/{boat_id}/missions/pending")
     def pending_mission(

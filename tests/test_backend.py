@@ -63,7 +63,11 @@ def test_roles_and_alert_acknowledgement(monkeypatch):
             assert alerts[0]["code"] == "WATER_DETECTED"
             assert client.post(f"/v1/alerts/{alerts[0]['id']}/ack", headers=read_headers).status_code == 403
             lab_headers = {"Authorization": "Bearer lab-token"}
-            assert client.get("/v1/me", headers=lab_headers).json() == {"name": "Lab", "role": "laboratory"}
+            profile = client.get("/v1/me", headers=lab_headers).json()
+            assert profile["name"] == "Lab"
+            assert profile["role"] == "laboratory"
+            assert profile["can_control"] is False
+            assert profile["can_acknowledge_alerts"] is True
             assert client.post(f"/v1/alerts/{alerts[0]['id']}/ack", headers=lab_headers).json() == {"acknowledged": True}
         store.close()
 

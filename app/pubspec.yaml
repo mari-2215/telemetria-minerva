@@ -1,7 +1,7 @@
 name: telemetria_minerva_app
 description: Aplicativo de telemetria da Minerva Nautica
 publish_to: none
-version: 0.1.2+3
+version: 0.2.0+4
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

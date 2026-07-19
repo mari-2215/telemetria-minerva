@@ -75,8 +75,18 @@ def _triangle(value: float, left: float, peak: float, right: float) -> float:
     return (value - left) / (peak - left) if value < peak else (right - value) / (right - peak)
 
 
-def fuzzy_navigation_output(heading_error_deg: float, distance_m: float, cruise_throttle: float) -> tuple[float, float]:
-    """Small Mamdani-style controller for pod deflection and cruise power."""
+def fuzzy_navigation_output(
+    heading_error_deg: float,
+    distance_m: float,
+    cruise_throttle: float,
+    strategy: str = "balanced",
+) -> tuple[float, float]:
+    """Mamdani-style controller for pod deflection and propulsion power.
+
+    ``balanced`` prioritizes smoothness and energy. ``best_time`` keeps more
+    power on straights and medium turns, while still cutting power near a
+    waypoint or during a very large heading error.
+    """
     error = min(180.0, abs(heading_error_deg))
     heading_membership = (
         max(0.0, 1.0 - error / 25.0),
@@ -94,11 +104,26 @@ def fuzzy_navigation_output(heading_error_deg: float, distance_m: float, cruise_
         _triangle(distance_m, 8.0, 30.0, 70.0),
         max(0.0, min(1.0, (distance_m - 35.0) / 45.0)),
     )
-    throttle_outputs = (min(0.20, cruise_throttle), cruise_throttle * 0.65, cruise_throttle)
+    if strategy == "best_time":
+        throttle_outputs = (
+            min(cruise_throttle, max(0.24, cruise_throttle * 0.48)),
+            cruise_throttle * 0.88,
+            cruise_throttle,
+        )
+        turn_penalty = 0.38
+    else:
+        throttle_outputs = (min(0.20, cruise_throttle), cruise_throttle * 0.65, cruise_throttle)
+        turn_penalty = 0.55
+
     distance_weight = sum(distance_membership) or 1.0
     throttle = sum(weight * output for weight, output in zip(distance_membership, throttle_outputs)) / distance_weight
-    turn_reduction = 1.0 - 0.55 * min(1.0, error / 90.0)
-    return deflection, max(0.0, min(cruise_throttle, throttle * turn_reduction))
+    turn_reduction = 1.0 - turn_penalty * min(1.0, error / 90.0)
+    throttle *= turn_reduction
+
+    if strategy == "best_time" and distance_m > 24.0 and error < 14.0:
+        throttle = max(throttle, cruise_throttle * 0.95)
+
+    return deflection, max(0.0, min(cruise_throttle, throttle))
 
 
 def navigation_solution(
@@ -108,6 +133,7 @@ def navigation_solution(
     target_latitude_deg: float,
     target_longitude_deg: float,
     cruise_throttle: float,
+    strategy: str = "balanced",
 ) -> NavigationSolution:
     radius_m = 6_371_000.0
     lat1 = math.radians(latitude_deg)
@@ -120,7 +146,7 @@ def navigation_solution(
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(delta_lon)
     bearing = math.degrees(math.atan2(y, x)) % 360.0
     error_deg = _wrap_degrees(bearing - course_deg)
-    rudder_deflection, throttle = fuzzy_navigation_output(error_deg, distance, cruise_throttle)
+    rudder_deflection, throttle = fuzzy_navigation_output(error_deg, distance, cruise_throttle, strategy)
     return NavigationSolution(distance, bearing, error_deg, 45.0 + rudder_deflection, throttle)
 
 
@@ -160,7 +186,10 @@ class MissionAutopilot:
         if current - self.last_command_at < self.command_interval_seconds or telemetry is None:
             return None
         control = telemetry.data.get("control") or {}
+        autopilot_state = telemetry.data.get("autopilot") or {}
         if control.get("mode") != "auto" or not control.get("rc_healthy", False):
+            return None
+        if not autopilot_state.get("latched", False):
             return None
         position = telemetry.data.get("position") or {}
         if "latitude_deg" not in position or "longitude_deg" not in position:
@@ -180,6 +209,7 @@ class MissionAutopilot:
             waypoint.latitude_deg,
             waypoint.longitude_deg,
             mission.cruise_throttle,
+            mission.strategy,
         )
         completed = False
         while solution.distance_m <= waypoint.tolerance_m:
@@ -196,6 +226,7 @@ class MissionAutopilot:
                 waypoint.latitude_deg,
                 waypoint.longitude_deg,
                 mission.cruise_throttle,
+                mission.strategy,
             )
         self.command_sequence = (self.command_sequence + 1) & 0xFFFFFFFF
         command = AutopilotCommand(
