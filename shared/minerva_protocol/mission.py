@@ -15,6 +15,7 @@ class MissionValidationError(ValueError):
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 _MISSION_STRATEGIES = {"balanced", "best_time"}
+_DRIVE_DIRECTIONS = {"forward", "reverse", "stop"}
 
 
 def _finite_number(value: Any, name: str) -> float:
@@ -109,6 +110,10 @@ class AutopilotCommand:
     valid_for_ms: int
     mission_id: str
     waypoint_index: int
+    drive_direction: str = "forward"
+    steering_norm: float = 0.0
+    stability_factor: float = 1.0
+    maneuver: str = "cruise"
 
     def to_payload(self) -> bytes:
         if not 0 <= self.command_sequence <= 0xFFFFFFFF:
@@ -123,6 +128,14 @@ class AutopilotCommand:
             raise ValueError("mission_id must contain 1 to 32 characters")
         if not 0 <= self.waypoint_index <= 65535:
             raise ValueError("waypoint_index must fit uint16")
+        if self.drive_direction not in _DRIVE_DIRECTIONS:
+            raise ValueError("invalid drive_direction")
+        if not math.isfinite(self.steering_norm) or not -1.0 <= self.steering_norm <= 1.0:
+            raise ValueError("steering_norm out of range")
+        if not math.isfinite(self.stability_factor) or not 0.0 <= self.stability_factor <= 1.0:
+            raise ValueError("stability_factor out of range")
+        if not isinstance(self.maneuver, str) or not 1 <= len(self.maneuver) <= 32:
+            raise ValueError("invalid maneuver")
         return json.dumps(
             {
                 "command_sequence": self.command_sequence,
@@ -131,6 +144,10 @@ class AutopilotCommand:
                 "valid_for_ms": self.valid_for_ms,
                 "mission_id": self.mission_id,
                 "waypoint_index": self.waypoint_index,
+                "drive_direction": self.drive_direction,
+                "steering_norm": round(self.steering_norm, 3),
+                "stability_factor": round(self.stability_factor, 3),
+                "maneuver": self.maneuver,
             },
             separators=(",", ":"),
         ).encode()

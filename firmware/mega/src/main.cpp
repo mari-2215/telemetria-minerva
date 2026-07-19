@@ -136,6 +136,10 @@ float cachedAirTempC = NAN;
 float cachedHumidityPct = NAN;
 
 AutopilotState autopilot = {false, 0, 0, 0, kSafePodDeg, 0.0F, "", 0};
+float autopilotStabilityFactor = 1.0F;
+float autopilotSteeringNorm = 0.0F;
+char autopilotDriveDirection[8] = "forward";
+char autopilotManeuver[33] = "idle";
 
 uint32_t txSequence = 0;
 uint32_t lastControlMs = 0;
@@ -394,6 +398,32 @@ void handleAutopilotPayload(const uint8_t* payload, uint16_t length, uint32_t fr
   memcpy(autopilot.missionId, mission, missionLength);
   autopilot.missionId[missionLength] = '\0';
   autopilot.waypointIndex = waypointValue.as<uint16_t>();
+
+  JsonVariant stabilityValue = commandDocument["stability_factor"];
+  JsonVariant steeringValue = commandDocument["steering_norm"];
+  autopilotStabilityFactor =
+      stabilityValue.is<float>() || stabilityValue.is<int>()
+          ? clampFloat(stabilityValue.as<float>(), 0.0F, 1.0F)
+          : 1.0F;
+  autopilotSteeringNorm =
+      steeringValue.is<float>() || steeringValue.is<int>()
+          ? clampFloat(steeringValue.as<float>(), -1.0F, 1.0F)
+          : 0.0F;
+
+  const char* driveDirection =
+      commandDocument["drive_direction"] | "forward";
+  const char* maneuver = commandDocument["maneuver"] | "cruise";
+  strncpy(
+      autopilotDriveDirection,
+      driveDirection,
+      sizeof(autopilotDriveDirection) - 1);
+  autopilotDriveDirection[sizeof(autopilotDriveDirection) - 1] = '\0';
+  strncpy(
+      autopilotManeuver,
+      maneuver,
+      sizeof(autopilotManeuver) - 1);
+  autopilotManeuver[sizeof(autopilotManeuver) - 1] = '\0';
+
   invalidCommandAlarm = false;
   commandTimeoutLatched = false;
   sendAck(commandSequence, true, "ok");
@@ -604,6 +634,9 @@ void transmitTelemetry(uint32_t nowMs) {
   telemetryDocument["boat_id"] = kBoatId;
   telemetryDocument["sequence"] = txSequence;
   telemetryDocument["recorded_at"] = "1970-01-01T00:00:00Z";
+  JsonObject vessel = telemetryDocument["vessel"].to<JsonObject>();
+  vessel["type"] = "azimuth";
+  vessel["display_name"] = "Azimutal";
 
   if (gps.location.isValid()) {
     JsonObject position = telemetryDocument["position"].to<JsonObject>();
@@ -656,11 +689,15 @@ void transmitTelemetry(uint32_t nowMs) {
   autoState["target_pod_deg"] = autopilot.targetPodDeg;
   autoState["mission_id"] = autopilot.missionId;
   autoState["waypoint_index"] = autopilot.waypointIndex;
+  autoState["stability_factor"] = autopilotStabilityFactor;
+  autoState["maneuver"] = autopilotManeuver;
 
   JsonObject propulsion = telemetryDocument["propulsion"].to<JsonObject>();
   propulsion["pod_angle_deg"] = currentPodDeg;
   propulsion["target_pod_angle_deg"] = targetPodDeg;
   propulsion["rudder_norm"] = rudderNormalized;
+  propulsion["steering_norm"] = autopilotSteeringNorm;
+  propulsion["drive_direction"] = autopilotDriveDirection;
   propulsion["throttle_norm"] = throttleNormalized;
   propulsion["servo1_pwm_us"] = currentServo1Us;
   propulsion["servo2_pwm_us"] = currentServo2Us;

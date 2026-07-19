@@ -584,14 +584,18 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                                         ),
                                       ],
                                     ),
-                                  if (missionPoints.isNotEmpty)
+                                  if (missionPoints.isNotEmpty &&
+                                      telemetry.autopilotLatched)
                                     PolylineLayer(
                                       polylines: buildRoutePowerPolylines(
                                         waypoints: missionPoints,
                                         currentPosition: currentPosition,
                                         strategy: _mission!.strategy,
                                         cruiseThrottle: _mission!.cruiseThrottle,
+                                        boatId: _mission!.boatId,
                                         strokeWidth: 6,
+                                        dashed: !_mission!.startConfirmed,
+                                        opacity: _mission!.startConfirmed ? 1.0 : 0.82,
                                       ),
                                     ),
                                   if (recordingPoints.length > 1)
@@ -602,12 +606,14 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                                     ),
                                   MarkerLayer(
                                     markers: [
-                                      if (_mission != null)
+                                      if (_mission != null &&
+                                          telemetry.autopilotLatched)
                                         ...buildRoutePowerMarkers(
                                           waypoints: missionPoints,
                                           currentPosition: currentPosition,
                                           strategy: _mission!.strategy,
                                           cruiseThrottle: _mission!.cruiseThrottle,
+                                          boatId: _mission!.boatId,
                                         ),
                                       Marker(
                                         point: LatLng(telemetry.latitude!, telemetry.longitude!),
@@ -653,6 +659,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                                   child: RouteMiniMap(
                                     mission: _mission!,
                                     currentPosition: currentPosition,
+                                    liveStart: telemetry.autopilotLatched,
                                   ),
                                 ),
                               ),

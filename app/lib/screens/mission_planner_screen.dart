@@ -540,6 +540,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
           currentPosition: widget.initialPosition,
           strategy: _strategy,
           cruiseThrottle: _effectiveThrottle,
+          boatId: mission.boatId,
           height: 370,
         ),
         const SizedBox(height: 12),
@@ -618,6 +619,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
       currentPosition: widget.initialPosition,
       strategy: _strategy,
       cruiseThrottle: _effectiveThrottle,
+      boatId: widget.boatId,
     );
 
     return ListView(
@@ -686,6 +688,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                                 currentPosition: widget.initialPosition,
                                 strategy: _strategy,
                                 cruiseThrottle: _effectiveThrottle,
+                                boatId: widget.boatId,
                               ),
                               if (widget.initialPosition != null)
                                 Marker(

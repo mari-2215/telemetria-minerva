@@ -24,6 +24,7 @@ dev = [
 [project.scripts]
 minerva-boat = "minerva_boat.cli:main"
 minerva-simulator = "minerva_boat.simulator:main"
+minerva-dual-mock = "minerva_boat.dual_mock:main"
 minerva-api = "minerva_api.cli:main"
 
 [tool.setuptools.packages.find]
