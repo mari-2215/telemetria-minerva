@@ -277,7 +277,7 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
     @app.get("/v1/boats/{boat_id}/recordings/active")
     def active_recording(
         boat_id: str,
-        _: Principal = Depends(current_principal),
+        _: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
         telemetry_store: TelemetryStore = Depends(current_store),
     ) -> dict[str, Any] | None:
         return telemetry_store.active_recording(boat_id)

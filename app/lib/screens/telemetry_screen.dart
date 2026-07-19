@@ -67,7 +67,16 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     _fetching = true;
     try {
       final telemetry = await widget.client.latest(widget.boatId);
-      final recording = await widget.client.activeRecording(widget.boatId);
+      final previousRecording = _recording;
+      final recording = widget.profile.isCaptain
+          ? await widget.client.activeRecording(widget.boatId)
+          : null;
+      final recordingDiscardedForInactivity =
+          widget.profile.isCaptain &&
+          previousRecording != null &&
+          recording == null &&
+          !_recordingBusy &&
+          previousRecording.points.length <= 2;
       final missions = await widget.client.missions(widget.boatId);
       final mission = _selectMission(missions);
       final previousLatch = _lastLatchState;
@@ -89,7 +98,21 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
           _trail = trail;
           _error = null;
         });
-        await _handleLatchTransition(previousLatch, telemetry.autopilotLatched, mission);
+        await _handleLatchTransition(
+          previousLatch,
+          telemetry.autopilotLatched,
+          mission,
+        );
+        if (recordingDiscardedForInactivity && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Color(0xFFB45309),
+              content: Text(
+                'Gravação encerrada e descartada: não foi detectado movimento suficiente por 5 segundos.',
+              ),
+            ),
+          );
+        }
       }
     } catch (error) {
       if (mounted) setState(() => _error = error);
@@ -598,7 +621,8 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                                         opacity: _mission!.startConfirmed ? 1.0 : 0.82,
                                       ),
                                     ),
-                                  if (recordingPoints.length > 1)
+                                  if (widget.profile.isCaptain &&
+                                      recordingPoints.length > 1)
                                     PolylineLayer(
                                       polylines: [
                                         Polyline(points: recordingPoints, color: Colors.redAccent, strokeWidth: 6),
@@ -663,7 +687,8 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                                   ),
                                 ),
                               ),
-                            if (_recording != null)
+                            if (widget.profile.isCaptain &&
+                                _recording != null)
                               Positioned(
                                 right: 12,
                                 top: 12,

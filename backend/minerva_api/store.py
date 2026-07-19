@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
@@ -119,6 +120,10 @@ class TelemetryStore:
             if inserted:
                 self._update_alerts(telemetry)
                 self._sync_mission_authorization_from_telemetry(telemetry)
+                self._expire_stale_recording_locked(
+                    telemetry.boat_id,
+                    Telemetry.utc_now(),
+                )
                 self._capture_active_recording(telemetry)
             return inserted
 
@@ -178,6 +183,73 @@ class TelemetryStore:
         delta_lambda = math.radians(lon2 - lon1)
         value = math.sin(delta_phi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
         return radius_m * 2.0 * math.atan2(math.sqrt(value), math.sqrt(max(0.0, 1.0 - value)))
+
+    @staticmethod
+    def _recording_timestamp(value: str) -> datetime:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def _expire_stale_recording_locked(
+        self,
+        boat_id: str,
+        now: str,
+        inactivity_seconds: float = 5.0,
+    ) -> str | None:
+        row = self._connection.execute(
+            """
+            SELECT r.recording_id, r.started_at,
+                   COUNT(p.point_index) AS point_count,
+                   MAX(p.recorded_at) AS last_point_at
+            FROM route_recordings r
+            LEFT JOIN route_recording_points p
+              ON p.recording_id = r.recording_id
+            WHERE r.boat_id = ? AND r.status = 'recording'
+            GROUP BY r.recording_id, r.started_at
+            """,
+            (boat_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        # Até dois pontos ainda não formam uma trajetória confiável.
+        # Após o terceiro ponto, uma pausa normal não apaga a rota.
+        if int(row["point_count"]) > 2:
+            return None
+
+        reference = row["last_point_at"] or row["started_at"]
+        elapsed = (
+            self._recording_timestamp(now)
+            - self._recording_timestamp(str(reference))
+        ).total_seconds()
+        if elapsed < inactivity_seconds:
+            return None
+
+        recording_id = str(row["recording_id"])
+        self._connection.execute(
+            """
+            UPDATE route_recordings
+            SET status = 'discarded', finished_at = ?
+            WHERE recording_id = ? AND status = 'recording'
+            """,
+            (now, recording_id),
+        )
+        return recording_id
+
+    def expire_stale_recording(
+        self,
+        boat_id: str,
+        now: str | None = None,
+        inactivity_seconds: float = 5.0,
+    ) -> str | None:
+        current = now or Telemetry.utc_now()
+        with self._lock, self._connection:
+            return self._expire_stale_recording_locked(
+                boat_id,
+                current,
+                inactivity_seconds,
+            )
 
     def _capture_active_recording(self, telemetry: Telemetry) -> None:
         position = telemetry.data.get("position") or {}
@@ -465,17 +537,22 @@ class TelemetryStore:
         return self._recording_row(row, points)
 
     def active_recording(self, boat_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT * FROM route_recordings WHERE boat_id = ? AND status = 'recording'",
-            (boat_id,),
-        ).fetchone()
-        if row is None:
-            return None
-        points = self._connection.execute(
-            "SELECT * FROM route_recording_points WHERE recording_id = ? ORDER BY point_index",
-            (row["recording_id"],),
-        ).fetchall()
-        return self._recording_row(row, points)
+        with self._lock, self._connection:
+            self._expire_stale_recording_locked(
+                boat_id,
+                Telemetry.utc_now(),
+            )
+            row = self._connection.execute(
+                "SELECT * FROM route_recordings WHERE boat_id = ? AND status = 'recording'",
+                (boat_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            points = self._connection.execute(
+                "SELECT * FROM route_recording_points WHERE recording_id = ? ORDER BY point_index",
+                (row["recording_id"],),
+            ).fetchall()
+            return self._recording_row(row, points)
 
     def start_recording(
         self,
