@@ -218,6 +218,30 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
         return mission
 
+    @app.post("/v1/missions/{mission_id}/configure")
+    def configure_mission(
+        mission_id: str,
+        payload: dict[str, Any],
+        _: Principal = Depends(require_roles(*CAPTAIN_ROLES)),
+        telemetry_store: TelemetryStore = Depends(current_store),
+    ) -> dict[str, Any]:
+        strategy = str(payload.get("strategy") or "balanced")
+        try:
+            cruise_throttle = float(payload.get("cruise_throttle", 0.55))
+            mission = telemetry_store.configure_mission(
+                mission_id,
+                strategy,
+                cruise_throttle,
+                Telemetry.utc_now(),
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        if mission is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="mission not found")
+        return mission
+
     @app.post("/v1/missions/{mission_id}/ready")
     def confirm_mission_start(
         mission_id: str,
@@ -266,22 +290,18 @@ def create_app(store: TelemetryStore | None = None) -> FastAPI:
         telemetry_store: TelemetryStore = Depends(current_store),
     ) -> dict[str, Any]:
         name = str(payload.get("name") or "Trajetória de prova").strip()
-        strategy = str(payload.get("strategy") or "balanced")
         try:
-            cruise_throttle = float(payload.get("cruise_throttle", 0.45))
             return telemetry_store.start_recording(
                 recording_id=f"rec-{uuid4().hex[:16]}",
                 boat_id=boat_id,
                 name=name,
-                strategy=strategy,
-                cruise_throttle=cruise_throttle,
+                strategy="balanced",
+                cruise_throttle=0.55,
                 actor=principal.name,
                 now=Telemetry.utc_now(),
             )
         except RuntimeError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     @app.post("/v1/recordings/{recording_id}/stop")
     def stop_recording(

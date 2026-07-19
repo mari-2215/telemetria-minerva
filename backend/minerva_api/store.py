@@ -363,6 +363,31 @@ class TelemetryStore:
             )
         return self.mission(mission_id)
 
+    def configure_mission(
+        self,
+        mission_id: str,
+        strategy: str,
+        cruise_throttle: float,
+        now: str,
+    ) -> dict[str, Any] | None:
+        mission = self.mission(mission_id)
+        if mission is None:
+            return None
+        if mission["status"] == "active" or mission["start_confirmed"]:
+            raise RuntimeError("active or authorized mission cannot be configured")
+        if strategy not in {"balanced", "best_time"}:
+            raise ValueError("invalid strategy")
+        if strategy == "best_time":
+            cruise_throttle = 1.0
+        elif not 0.15 <= cruise_throttle <= 0.85:
+            raise ValueError("limited power must be between 0.15 and 0.85")
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE missions SET strategy = ?, cruise_throttle = ?, updated_at = ? WHERE mission_id = ?",
+                (strategy, cruise_throttle, now, mission_id),
+            )
+        return self.mission(mission_id)
+
     def set_mission_ready(self, mission_id: str, ready: bool, now: str) -> dict[str, Any] | None:
         mission = self.mission(mission_id)
         if mission is None:

@@ -22,13 +22,16 @@ class MissionPlannerScreen extends StatefulWidget {
   final LatLng? initialPosition;
 
   @override
-  State<MissionPlannerScreen> createState() => _MissionPlannerScreenState();
+  State<MissionPlannerScreen> createState() =>
+      _MissionPlannerScreenState();
 }
 
 class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   final _name = TextEditingController(text: 'Rota de prova');
   final List<LatLng> _points = [];
-  late Future<List<Mission>> _missions = widget.client.missions(widget.boatId);
+
+  late Future<List<Mission>> _missions =
+      widget.client.missions(widget.boatId);
 
   _PlannerView _view = _PlannerView.library;
   Mission? _selectedMission;
@@ -36,6 +39,9 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   String _strategy = 'balanced';
   bool _busy = false;
   String? _error;
+
+  double get _effectiveThrottle =>
+      _strategy == 'best_time' ? 1.0 : _throttle;
 
   @override
   void dispose() {
@@ -59,6 +65,8 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
     setState(() {
       _view = _PlannerView.create;
       _selectedMission = null;
+      _strategy = 'balanced';
+      _throttle = 0.55;
       _error = null;
     });
   }
@@ -66,6 +74,10 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   void _openPreview(Mission mission) {
     setState(() {
       _selectedMission = mission;
+      _strategy = mission.strategy;
+      _throttle = mission.strategy == 'best_time'
+          ? 0.55
+          : mission.cruiseThrottle.clamp(0.15, 0.85).toDouble();
       _view = _PlannerView.preview;
       _error = null;
     });
@@ -73,7 +85,10 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
 
   Future<void> _saveDraft() async {
     if (_points.isEmpty || _name.text.trim().isEmpty) {
-      setState(() => _error = 'Dê um nome e marque pelo menos um ponto no mapa.');
+      setState(
+        () => _error =
+            'Dê um nome e marque pelo menos um destino no mapa.',
+      );
       return;
     }
 
@@ -95,7 +110,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
               ),
             )
             .toList(),
-        cruiseThrottle: _throttle,
+        cruiseThrottle: _effectiveThrottle,
         strategy: _strategy,
       );
 
@@ -107,7 +122,9 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Rota salva. Toque nela para pré-visualizar e enviar.'),
+            content: Text(
+              'Rota salva. Toque nela para pré-visualizar e enviar.',
+            ),
           ),
         );
       }
@@ -125,7 +142,13 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
     });
 
     try {
-      final activated = await widget.client.activateMission(mission.id);
+      final configured = await widget.client.configureMission(
+        mission.id,
+        strategy: _strategy,
+        cruiseThrottle: _effectiveThrottle,
+      );
+      final activated =
+          await widget.client.activateMission(configured.id);
       if (!mounted) return;
       Navigator.of(context).pop(activated);
     } catch (error) {
@@ -154,8 +177,14 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                 },
               ),
               ListTile(
-                leading: Icon(Icons.delete_outline_rounded, color: Colors.red.shade700),
-                title: Text('Apagar rota', style: TextStyle(color: Colors.red.shade700)),
+                leading: Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.red.shade700,
+                ),
+                title: Text(
+                  'Apagar rota',
+                  style: TextStyle(color: Colors.red.shade700),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _confirmDelete(mission);
@@ -172,7 +201,9 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
     if (!mission.canDelete) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Uma rota em execução ou já autorizada não pode ser apagada.'),
+          content: Text(
+            'Uma rota em execução ou já autorizada não pode ser apagada.',
+          ),
         ),
       );
       return;
@@ -184,7 +215,8 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
         icon: const Icon(Icons.delete_forever_rounded),
         title: const Text('Apagar rota?'),
         content: Text(
-          'A rota “${mission.name}” será apagada permanentemente.\n\nEsta ação não pode ser desfeita.',
+          'A rota “${mission.name}” será apagada permanentemente.\n\n'
+          'Esta ação não pode ser desfeita.',
         ),
         actions: [
           TextButton(
@@ -192,7 +224,9 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Apagar'),
           ),
@@ -225,11 +259,16 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
     }
   }
 
-  String _strategyLabel(String strategy) => strategy == 'best_time' ? 'Melhor tempo' : 'Controle fino';
+  String _strategyLabel(String strategy) =>
+      strategy == 'best_time' ? 'Melhor tempo' : 'Limite de potência';
+
+  String _powerLabel(Mission mission) => mission.strategy == 'best_time'
+      ? 'potência dinâmica'
+      : 'máx. ${(mission.cruiseThrottle * 100).round()}%';
 
   String _statusLabel(Mission mission) {
     if (mission.status == 'pending' && !mission.startConfirmed) {
-      return 'Enviada · aguardando latch e capitão';
+      return 'Enviada · aguardando latch';
     }
     if (mission.status == 'pending' && mission.startConfirmed) {
       return 'Partida autorizada · aguardando barco';
@@ -277,16 +316,6 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
         duration: const Duration(milliseconds: 420),
         switchInCurve: Curves.easeOutCubic,
         switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.025, 0.015),
-              end: Offset.zero,
-            ).animate(animation),
-            child: child,
-          ),
-        ),
         child: switch (_view) {
           _PlannerView.library => _libraryView(),
           _PlannerView.create => _createView(),
@@ -305,47 +334,45 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
           child: InkWell(
             borderRadius: BorderRadius.circular(24),
             onTap: _openCreate,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
+            child: const Padding(
+              padding: EdgeInsets.all(20),
               child: Row(
                 children: [
-                  Container(
-                    width: 58,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Icon(
-                      Icons.add_road_rounded,
-                      color: Theme.of(context).colorScheme.primary,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  const Expanded(
+                  Icon(Icons.add_road_rounded, size: 44),
+                  SizedBox(width: 16),
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Criar rota do zero',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                         SizedBox(height: 4),
-                        Text('Abra o mapa e marque os waypoints na ordem da prova.'),
+                        Text(
+                          'Marque somente os destinos. A largada será a posição atual do barco.',
+                        ),
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right_rounded),
+                  Icon(Icons.chevron_right_rounded),
                 ],
               ),
             ),
           ),
         ),
         const SizedBox(height: 18),
-        Text('Escolher uma rota já criada', style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          'Escolher uma rota já criada',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         const SizedBox(height: 4),
-        const Text('Toque para pré-visualizar. Pressione e segure para abrir as opções.'),
+        const Text(
+          'Toque para pré-visualizar. Pressione e segure para abrir as opções.',
+        ),
         const SizedBox(height: 10),
         FutureBuilder<List<Mission>>(
           future: _missions,
@@ -363,7 +390,10 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                   leading: const Icon(Icons.cloud_off_rounded),
                   title: const Text('Falha ao carregar as rotas'),
                   subtitle: Text('${snapshot.error}'),
-                  trailing: IconButton(onPressed: _reload, icon: const Icon(Icons.refresh_rounded)),
+                  trailing: IconButton(
+                    onPressed: _reload,
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
                 ),
               );
             }
@@ -377,11 +407,9 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                     children: [
                       Icon(Icons.route_outlined, size: 42),
                       SizedBox(height: 10),
-                      Text('Nenhuma rota salva ainda.', style: TextStyle(fontWeight: FontWeight.w800)),
-                      SizedBox(height: 4),
                       Text(
-                        'Crie uma rota do zero ou grave uma trajetória real.',
-                        textAlign: TextAlign.center,
+                        'Nenhuma rota salva ainda.',
+                        style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ],
                   ),
@@ -396,33 +424,98 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Card(
                       child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 10,
+                        ),
                         onTap: () => _openPreview(mission),
                         onLongPress: () => _showMissionActions(mission),
-                        leading: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: _statusColor(mission.status).withValues(alpha: 0.13),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(Icons.route_rounded, color: _statusColor(mission.status)),
+                        leading: Icon(
+                          Icons.route_rounded,
+                          color: _statusColor(mission.status),
+                          size: 34,
                         ),
-                        title: Text(mission.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                        title: Text(
+                          mission.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                         subtitle: Text(
-                          '${mission.waypoints.length} pontos · '
+                          '${mission.waypoints.length} destinos · '
                           '${_strategyLabel(mission.strategy)} · '
-                          '${(mission.cruiseThrottle * 100).round()}%\n'
+                          '${_powerLabel(mission)}\n'
                           '${_statusLabel(mission)}',
                         ),
                         isThreeLine: true,
-                        trailing: const Icon(Icons.chevron_right_rounded),
+                        trailing:
+                            const Icon(Icons.chevron_right_rounded),
                       ),
                     ),
                   ),
               ],
             );
           },
+        ),
+      ],
+    );
+  }
+
+  Widget _executionModeSelector({required bool enabled}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(
+              value: 'balanced',
+              icon: Icon(Icons.speed_rounded),
+              label: Text('Limite de potência'),
+            ),
+            ButtonSegment(
+              value: 'best_time',
+              icon: Icon(Icons.timer_rounded),
+              label: Text('Melhor tempo'),
+            ),
+          ],
+          selected: {_strategy},
+          onSelectionChanged: enabled
+              ? (values) => setState(() => _strategy = values.first)
+              : null,
+        ),
+        const SizedBox(height: 10),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _strategy == 'best_time'
+              ? const Card(
+                  key: ValueKey('best-time-info'),
+                  child: Padding(
+                    padding: EdgeInsets.all(14),
+                    child: Text(
+                      'Melhor tempo usa toda a potência disponível nas retas e reduz automaticamente nas curvas e na chegada.',
+                    ),
+                  ),
+                )
+              : Column(
+                  key: const ValueKey('power-limit'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Potência máxima: ${(_throttle * 100).round()}%',
+                    ),
+                    Slider(
+                      value: _throttle,
+                      min: 0.15,
+                      max: 0.85,
+                      divisions: 14,
+                      label: '${(_throttle * 100).round()}%',
+                      onChanged: enabled
+                          ? (value) =>
+                              setState(() => _throttle = value)
+                          : null,
+                    ),
+                  ],
+                ),
         ),
       ],
     );
@@ -436,6 +529,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
         .map((point) => LatLng(point.latitude, point.longitude))
         .toList(growable: false);
     final executing = mission.status == 'active';
+    final editable = !executing && !mission.startConfirmed;
 
     return ListView(
       key: ValueKey('route-preview-${mission.id}'),
@@ -444,43 +538,46 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
         RoutePreviewMap(
           points: points,
           currentPosition: widget.initialPosition,
-          height: 360,
+          strategy: _strategy,
+          cruiseThrottle: _effectiveThrottle,
+          height: 370,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.sailing_rounded),
+            title: Text(
+              widget.initialPosition == null
+                  ? 'GPS atual indisponível'
+                  : 'A rota começa onde o barco está',
+            ),
+            subtitle: const Text(
+              'A posição do barco não é salva como waypoint. Ela será recalculada ao vivo antes da largada.',
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(mission.name, style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    Chip(
-                      avatar: const Icon(Icons.pin_drop_rounded, size: 18),
-                      label: Text('${mission.waypoints.length} pontos'),
-                    ),
-                    Chip(
-                      avatar: const Icon(Icons.speed_rounded, size: 18),
-                      label: Text('${(mission.cruiseThrottle * 100).round()}%'),
-                    ),
-                    Chip(
-                      avatar: const Icon(Icons.psychology_alt_rounded, size: 18),
-                      label: Text(_strategyLabel(mission.strategy)),
-                    ),
-                    Chip(
-                      avatar: Icon(Icons.circle, size: 12, color: _statusColor(mission.status)),
-                      label: Text(_statusLabel(mission)),
-                    ),
-                  ],
+                Text(
+                  mission.name,
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
+                _executionModeSelector(enabled: editable),
+                const SizedBox(height: 14),
                 FilledButton.icon(
-                  onPressed: _busy || executing ? null : () => _sendMission(mission),
-                  icon: Icon(executing ? Icons.directions_boat_filled_rounded : Icons.send_rounded),
+                  onPressed:
+                      _busy || executing ? null : () => _sendMission(mission),
+                  icon: Icon(
+                    executing
+                        ? Icons.directions_boat_filled_rounded
+                        : Icons.send_rounded,
+                  ),
                   label: Text(
                     executing
                         ? 'Rota em execução'
@@ -491,13 +588,19 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _confirmDelete(mission),
+                  onPressed:
+                      _busy ? null : () => _confirmDelete(mission),
                   icon: const Icon(Icons.delete_outline_rounded),
                   label: const Text('Apagar esta rota'),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -508,45 +611,54 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   }
 
   Widget _createView() {
-    final center = widget.initialPosition ?? const LatLng(-26.3044, -48.8464);
+    final center =
+        widget.initialPosition ?? const LatLng(-26.3044, -48.8464);
+    final routePolylines = buildRoutePowerPolylines(
+      waypoints: _points,
+      currentPosition: widget.initialPosition,
+      strategy: _strategy,
+      cruiseThrottle: _effectiveThrottle,
+    );
 
     return ListView(
       key: const ValueKey('route-create'),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 36),
       children: [
+        if (widget.initialPosition == null)
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.gps_off_rounded),
+              title: Text('Mapa apenas como referência'),
+              subtitle: Text(
+                'Sem GPS atual, a largada não aparece agora. Na execução, a rota começará automaticamente onde o barco estiver.',
+              ),
+            ),
+          ),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Nova rota', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  'Nova rota',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 6),
-                const Text('Toque no mapa na ordem em que o barco deve visitar os pontos.'),
+                const Text(
+                  'Toque no mapa para marcar somente os destinos. O barco atual é a largada móvel.',
+                ),
                 const SizedBox(height: 16),
-                TextField(controller: _name, decoration: const InputDecoration(labelText: 'Nome da rota')),
+                TextField(
+                  controller: _name,
+                  decoration:
+                      const InputDecoration(labelText: 'Nome da rota'),
+                ),
                 const SizedBox(height: 14),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'balanced', icon: Icon(Icons.tune_rounded), label: Text('Controle fino')),
-                    ButtonSegment(value: 'best_time', icon: Icon(Icons.timer_rounded), label: Text('Melhor tempo')),
-                  ],
-                  selected: {_strategy},
-                  onSelectionChanged: (values) => setState(() => _strategy = values.first),
-                ),
-                const SizedBox(height: 10),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  child: Text(
-                    _strategy == 'best_time'
-                        ? 'O fuzzy mantém mais potência em retas e curvas médias, reduzindo perto do waypoint ou com erro de rumo grande.'
-                        : 'O fuzzy prioriza estabilidade, suavidade e menor consumo durante as correções de rumo.',
-                    key: ValueKey(_strategy),
-                  ),
-                ),
+                _executionModeSelector(enabled: true),
                 const SizedBox(height: 14),
                 SizedBox(
-                  height: 410,
+                  height: 420,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(22),
                     child: ColoredBox(
@@ -555,39 +667,67 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                         options: MapOptions(
                           initialCenter: center,
                           initialZoom: 16,
-                          onTap: (_, point) => setState(() => _points.add(point)),
+                          onTap: (_, point) =>
+                              setState(() => _points.add(point)),
                         ),
                         children: [
                           TileLayer(
-                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'br.org.minervanautica.telemetria',
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName:
+                                'br.org.minervanautica.telemetria',
                           ),
-                          if (_points.length > 1)
-                            PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: _points,
-                                  color: const Color(0xFF0B6CCB),
-                                  strokeWidth: 6,
-                                ),
-                              ],
-                            ),
+                          if (routePolylines.isNotEmpty)
+                            PolylineLayer(polylines: routePolylines),
                           MarkerLayer(
                             markers: [
-                              for (var index = 0; index < _points.length; index++)
+                              ...buildRoutePowerMarkers(
+                                waypoints: _points,
+                                currentPosition: widget.initialPosition,
+                                strategy: _strategy,
+                                cruiseThrottle: _effectiveThrottle,
+                              ),
+                              if (widget.initialPosition != null)
+                                Marker(
+                                  point: center,
+                                  width: 54,
+                                  height: 54,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: const Color(0xFF082B5C),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 3,
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      Icons.sailing_rounded,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              for (var index = 0;
+                                  index < _points.length;
+                                  index++)
                                 Marker(
                                   point: _points[index],
                                   width: 42,
                                   height: 42,
                                   child: Container(
                                     alignment: Alignment.center,
-                                    decoration: const BoxDecoration(
+                                    decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Color(0xFF082B5C),
+                                      color: index == _points.length - 1
+                                          ? const Color(0xFFDC2626)
+                                          : const Color(0xFF082B5C),
                                     ),
                                     child: Text(
                                       '${index + 1}',
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -600,35 +740,39 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                 ),
                 Row(
                   children: [
-                    Expanded(child: Text('${_points.length} waypoint(s)')),
+                    Expanded(
+                      child: Text('${_points.length} destino(s)'),
+                    ),
                     TextButton.icon(
-                      onPressed: _points.isEmpty ? null : () => setState(() => _points.removeLast()),
+                      onPressed: _points.isEmpty
+                          ? null
+                          : () => setState(() => _points.removeLast()),
                       icon: const Icon(Icons.undo_rounded),
                       label: const Text('Desfazer'),
                     ),
                     TextButton.icon(
-                      onPressed: _points.isEmpty ? null : () => setState(_points.clear),
+                      onPressed: _points.isEmpty
+                          ? null
+                          : () => setState(_points.clear),
                       icon: const Icon(Icons.delete_outline_rounded),
                       label: const Text('Limpar'),
                     ),
                   ],
                 ),
-                Text('Limite de potência: ${(_throttle * 100).round()}%'),
-                Slider(
-                  value: _throttle,
-                  min: 0.15,
-                  max: 0.85,
-                  divisions: 14,
-                  label: '${(_throttle * 100).round()}%',
-                  onChanged: (value) => setState(() => _throttle = value),
-                ),
                 if (_error != null)
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: _busy ? null : _saveDraft,
                   icon: const Icon(Icons.save_rounded),
-                  label: Text(_busy ? 'Salvando...' : 'Salvar rota'),
+                  label: Text(
+                    _busy ? 'Salvando...' : 'Salvar rota',
+                  ),
                 ),
               ],
             ),

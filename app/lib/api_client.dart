@@ -79,6 +79,22 @@ class ApiClient {
     return Mission.fromJson((_decode(response) as Map).cast<String, dynamic>());
   }
 
+  Future<Mission> configureMission(
+    String missionId, {
+    required String strategy,
+    required double cruiseThrottle,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/v1/missions/$missionId/configure'),
+      headers: _jsonHeaders,
+      body: jsonEncode({
+        'strategy': strategy,
+        'cruise_throttle': cruiseThrottle,
+      }),
+    );
+    return Mission.fromJson((_decode(response) as Map).cast<String, dynamic>());
+  }
+
   Future<Mission> setMissionReady(String missionId, bool ready) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/v1/missions/$missionId/ready'),
@@ -106,17 +122,11 @@ class ApiClient {
   Future<RouteRecording> startRecording({
     required String boatId,
     required String name,
-    required double cruiseThrottle,
-    required String strategy,
   }) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/v1/boats/$boatId/recordings/start'),
       headers: _jsonHeaders,
-      body: jsonEncode({
-        'name': name,
-        'cruise_throttle': cruiseThrottle,
-        'strategy': strategy,
-      }),
+      body: jsonEncode({'name': name}),
     );
     return RouteRecording.fromJson((_decode(response) as Map).cast<String, dynamic>());
   }

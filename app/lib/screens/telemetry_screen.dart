@@ -39,8 +39,6 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
   bool _readyDialogOpen = false;
   bool? _lastLatchState;
   int _tick = 0;
-  double _recordThrottle = 0.55;
-  String _recordStrategy = 'balanced';
 
   @override
   void initState() {
@@ -138,45 +136,51 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     if (sent == null || !mounted) return;
 
     setState(() => _mission = sent);
+    final latchAlreadyOn = _telemetry?.autopilotLatched == true;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: const Color(0xFF15803D),
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(child: Text('Rota “${sent.name}” enviada com sucesso.')),
-          ],
+        content: Text(
+          latchAlreadyOn
+              ? 'Rota “${sent.name}” enviada. Desligue e acione o latch novamente para autorizar.'
+              : 'Rota “${sent.name}” enviada com sucesso.',
         ),
       ),
     );
-
-    final currentTelemetry = _telemetry;
-    if (currentTelemetry?.autopilotLatched == true && !sent.startConfirmed) {
-      await Future<void>.delayed(const Duration(milliseconds: 350));
-      if (mounted) await _askBoatReady(sent);
-    }
     await _load();
   }
 
-  Future<void> _handleLatchTransition(bool? previous, bool latched, Mission? mission) async {
+  Future<void> _handleLatchTransition(
+    bool? previous,
+    bool latched,
+    Mission? mission,
+  ) async {
     if (!widget.profile.isCaptain) return;
 
-    if (previous == true && !latched && mission != null && mission.startConfirmed) {
+    if (previous == true &&
+        !latched &&
+        mission != null &&
+        mission.startConfirmed) {
       try {
-        final updated = await widget.client.setMissionReady(mission.id, false);
+        final updated =
+            await widget.client.setMissionReady(mission.id, false);
         if (mounted) setState(() => _mission = updated);
       } catch (_) {
-        // A telemetria e o Raspberry também revogam a autorização.
+        // O backend e o Raspberry também revogam a autorização.
       }
       return;
     }
 
-    if (latched && previous != true) {
+    // Somente uma transição observada de OFF para ON abre a confirmação.
+    if (previous == false && latched) {
       if (mission == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Latch acionado, mas nenhuma rota foi enviada ao barco.')),
+          const SnackBar(
+            content: Text(
+              'Latch acionado, mas nenhuma rota foi enviada ao barco.',
+            ),
+          ),
         );
         return;
       }
@@ -227,9 +231,25 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     }
 
     final telemetry = _telemetry;
-    if (telemetry?.autopilotLatched != true || telemetry?.controlMode != 'auto' || telemetry?.rcHealthy != true) {
+    if (telemetry?.autopilotLatched != true ||
+        telemetry?.controlMode != 'auto' ||
+        telemetry?.rcHealthy != true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('O rádio saiu do estado seguro antes da confirmação.')),
+        const SnackBar(
+          content: Text(
+            'O rádio saiu do estado seguro antes da confirmação.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (telemetry?.latitude == null || telemetry?.longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Aguardando posição GPS válida. A rota só começa de onde o barco está.',
+          ),
+        ),
       );
       return;
     }
@@ -262,26 +282,42 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         final now = DateTime.now();
         await widget.client.startRecording(
           boatId: widget.boatId,
-          name: 'Trajetória DUNA ${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
-          cruiseThrottle: _recordThrottle,
-          strategy: _recordStrategy,
+          name:
+              'Trajetória DUNA ${now.day.toString().padLeft(2, '0')}-'
+              '${now.month.toString().padLeft(2, '0')} '
+              '${now.hour.toString().padLeft(2, '0')}:'
+              '${now.minute.toString().padLeft(2, '0')}',
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Gravação iniciada. O backend continuará registrando mesmo com a tela bloqueada.')),
+            const SnackBar(
+              content: Text(
+                'Gravação iniciada. Apenas a trajetória GPS será registrada.',
+              ),
+            ),
           );
         }
       } else {
-        final mission = await widget.client.stopRecording(_recording!.id);
+        final mission =
+            await widget.client.stopRecording(_recording!.id);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Trajetória salva como “${mission.name}”.')),
+            SnackBar(
+              content: Text(
+                'Trajetória salva como “${mission.name}”. '
+                'Escolha o modo de potência ao enviar a rota.',
+              ),
+            ),
           );
         }
       }
       await _load(forceTrail: true);
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha: $error')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Falha: $error')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _recordingBusy = false);
     }
@@ -370,9 +406,6 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
 
     return Card(
       child: ListTile(
-        onTap: widget.profile.isCaptain && latched && !authorized && _mission != null
-            ? () => _askBoatReady(_mission!)
-            : null,
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
         leading: AnimatedContainer(
           duration: const Duration(milliseconds: 500),
@@ -389,80 +422,77 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                   ? 'Latch e confirmação do capitão estão ativos.'
                   : 'CH3 em AUTO não liga o motor sozinho. Pressione o botão de latch no rádio.',
         ),
-        trailing: widget.profile.isCaptain && latched && !authorized && _mission != null
-            ? const Icon(Icons.touch_app_rounded)
-            : null,
       ),
     );
   }
 
-  Widget _captainControls() {
+  Widget _captainActions() {
     final active = _recording != null;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+
+    Widget recordButton() => FilledButton.icon(
+          style: active
+              ? FilledButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                )
+              : null,
+          onPressed: _recordingBusy ? null : _toggleRecording,
+          icon: Icon(
+            active
+                ? Icons.stop_rounded
+                : Icons.fiber_manual_record_rounded,
+          ),
+          label: Text(
+            _recordingBusy
+                ? 'Processando...'
+                : active
+                    ? 'Parar e salvar rota'
+                    : 'Gravar rota',
+          ),
+        );
+
+    Widget selectButton() => OutlinedButton.icon(
+          onPressed: _openPlanner,
+          icon: const Icon(Icons.route_rounded),
+          label: const Text('Selecionar rota'),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < 430) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  recordButton(),
+                  const SizedBox(height: 10),
+                  selectButton(),
+                ],
+              );
+            }
+
+            return Row(
               children: [
-                const Icon(Icons.workspace_premium_rounded, color: Color(0xFF082B5C)),
+                Expanded(child: recordButton()),
                 const SizedBox(width: 10),
-                Expanded(child: Text('Central do capitão', style: Theme.of(context).textTheme.titleLarge)),
+                Expanded(child: selectButton()),
               ],
-            ),
-            const SizedBox(height: 8),
-            const Text('A gravação acontece no backend da margem. Apenas tokens de capitão podem iniciar, parar ou ativar rotas.'),
-            const SizedBox(height: 16),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'balanced', icon: Icon(Icons.tune_rounded), label: Text('Controle fino')),
-                ButtonSegment(value: 'best_time', icon: Icon(Icons.timer_rounded), label: Text('Melhor tempo')),
-              ],
-              selected: {_recordStrategy},
-              onSelectionChanged: active ? null : (values) => setState(() => _recordStrategy = values.first),
-            ),
-            const SizedBox(height: 16),
-            Text('Limite de potência: ${(_recordThrottle * 100).round()}%'),
-            Slider(
-              value: _recordThrottle,
-              min: 0.15,
-              max: 0.85,
-              divisions: 14,
-              label: '${(_recordThrottle * 100).round()}%',
-              onChanged: active ? null : (value) => setState(() => _recordThrottle = value),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    style: active ? FilledButton.styleFrom(backgroundColor: Colors.red.shade700) : null,
-                    onPressed: _recordingBusy ? null : _toggleRecording,
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 350),
-                      child: Icon(active ? Icons.stop_rounded : Icons.fiber_manual_record_rounded, key: ValueKey(active)),
-                    ),
-                    label: Text(_recordingBusy ? 'Processando...' : active ? 'Parar e salvar rota' : 'Gravar trajetória'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                IconButton.filledTonal(
-                  onPressed: _openPlanner,
-                  tooltip: 'Biblioteca e planejamento de rotas',
-                  icon: const Icon(Icons.route_rounded),
-                ),
-              ],
-            ),
-            if (active) ...[
-              const SizedBox(height: 14),
-              LinearProgressIndicator(borderRadius: BorderRadius.circular(999)),
-              const SizedBox(height: 8),
-              Text('${_recording!.points.length} pontos registrados · iniciada ${_recording!.startedAt.toLocal()}'),
-            ],
-          ],
+            );
+          },
         ),
-      ),
+        if (active) ...[
+          const SizedBox(height: 12),
+          LinearProgressIndicator(
+            borderRadius: BorderRadius.circular(999),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            '${_recording!.points.length} pontos gravados',
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
     );
   }
 
@@ -480,16 +510,11 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         toolbarHeight: 72,
         title: MinervaAppBarTitle(title: widget.boatId),
         actions: [
-          if (widget.profile.isCaptain)
-            IconButton(
-              onPressed: _recordingBusy ? null : _toggleRecording,
-              tooltip: _recording == null ? 'Gravar trajetória' : 'Parar gravação',
-              icon: Icon(
-                _recording == null ? Icons.fiber_manual_record_rounded : Icons.stop_circle_rounded,
-                color: _recording == null ? null : Colors.red,
-              ),
-            ),
-          IconButton(onPressed: _load, tooltip: 'Atualizar', icon: const Icon(Icons.refresh_rounded)),
+          IconButton(
+            onPressed: _load,
+            tooltip: 'Atualizar',
+            icon: const Icon(Icons.refresh_rounded),
+          ),
         ],
       ),
       body: telemetry == null
@@ -512,7 +537,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                   const SizedBox(height: 12),
                   _autopilotCard(telemetry),
                   const SizedBox(height: 12),
-                  if (widget.profile.isCaptain) ...[_captainControls(), const SizedBox(height: 12)],
+                  if (widget.profile.isCaptain) ...[_captainActions(), const SizedBox(height: 12)],
                   GridView.count(
                     crossAxisCount: MediaQuery.sizeOf(context).width > 700 ? 4 : 2,
                     shrinkWrap: true,
@@ -559,15 +584,15 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                                         ),
                                       ],
                                     ),
-                                  if (missionPoints.length > 1)
+                                  if (missionPoints.isNotEmpty)
                                     PolylineLayer(
-                                      polylines: [
-                                        Polyline(
-                                          points: missionPoints,
-                                          color: const Color(0xFF0B6CCB),
-                                          strokeWidth: 5,
-                                        ),
-                                      ],
+                                      polylines: buildRoutePowerPolylines(
+                                        waypoints: missionPoints,
+                                        currentPosition: currentPosition,
+                                        strategy: _mission!.strategy,
+                                        cruiseThrottle: _mission!.cruiseThrottle,
+                                        strokeWidth: 6,
+                                      ),
                                     ),
                                   if (recordingPoints.length > 1)
                                     PolylineLayer(
@@ -577,6 +602,13 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                                     ),
                                   MarkerLayer(
                                     markers: [
+                                      if (_mission != null)
+                                        ...buildRoutePowerMarkers(
+                                          waypoints: missionPoints,
+                                          currentPosition: currentPosition,
+                                          strategy: _mission!.strategy,
+                                          cruiseThrottle: _mission!.cruiseThrottle,
+                                        ),
                                       Marker(
                                         point: LatLng(telemetry.latitude!, telemetry.longitude!),
                                         width: 58,
