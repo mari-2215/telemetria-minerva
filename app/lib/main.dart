@@ -39,8 +39,12 @@ class _MinervaTelemetryAppState extends State<MinervaTelemetryApp> {
 
   Future<void> _restoreSession() async {
     final preferences = await SharedPreferences.getInstance();
-    final server = preferences.getString('server');
+    final storedServer = preferences.getString('server');
     final token = preferences.getString('token');
+    final server = kIsWeb ? '${Uri.base.origin}/api' : storedServer;
+    if (kIsWeb) {
+      await preferences.setString('server', server!);
+    }
     if (server != null && token != null) {
       final candidate = ApiClient(baseUrl: server, token: token);
       try {
@@ -62,11 +66,12 @@ class _MinervaTelemetryAppState extends State<MinervaTelemetryApp> {
   }
 
   Future<void> _login(String server, String token) async {
-    final candidate = ApiClient(baseUrl: server, token: token);
+    final effectiveServer = kIsWeb ? '${Uri.base.origin}/api' : server;
+    final candidate = ApiClient(baseUrl: effectiveServer, token: token);
     final profile = await candidate.me();
     await candidate.boats();
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString('server', server);
+    await preferences.setString('server', effectiveServer);
     await preferences.setString('token', token);
     _client?.close();
     if (mounted) {

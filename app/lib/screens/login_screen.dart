@@ -48,8 +48,12 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
+      final server = kIsWeb
+          ? '${Uri.base.origin}/api'
+          : _server.text.trim().replaceAll(RegExp(r'/$'), '');
+      _server.text = server;
       await widget.onLogin(
-        _server.text.trim().replaceAll(RegExp(r'/$'), ''),
+        server,
         _token.text.trim(),
       );
     } catch (error) {
@@ -65,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     if (login == null || !mounted) return;
 
-    _server.text = login.server;
+    _server.text = kIsWeb ? '${Uri.base.origin}/api' : login.server;
     _token.text = login.token;
     await _submit();
   }
@@ -121,11 +125,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                       TextField(
                         controller: _server,
+                        readOnly: kIsWeb,
                         keyboardType: TextInputType.url,
                         autocorrect: false,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Servidor',
-                          prefixIcon: Icon(Icons.dns_rounded),
+                          helperText: kIsWeb
+                              ? 'Gateway local automático — não precisa editar'
+                              : null,
+                          prefixIcon: const Icon(Icons.dns_rounded),
                         ),
                       ),
                       const SizedBox(height: 12),
