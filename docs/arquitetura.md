@@ -6,7 +6,7 @@
 2. O Raspberry Pi processa, registra e transporta dados, mas nao e necessario para manter o motor seguro.
 3. Toda amostra recebe `boat_id`, sequencia, horario monotonicamente crescente e qualidade.
 4. Toda fila de saida e persistente: perda de internet nao perde o ensaio.
-5. O aplicativo cria missoes, mas a propulsao autonoma so e liberada pelo canal CH3 fisico e por comandos com validade curta.
+5. O aplicativo cria missoes, mas no Azimutal a propulsao autonoma so e liberada pelo latch fisico CH1 e por comandos com validade curta.
 
 ## Bordo
 
@@ -63,5 +63,5 @@ Um unico projeto Flutter atende Android, iOS e navegador. Telas:
 
 - Sem LoRa: o Pi continua gravando e tenta retransmitir.
 - Sem internet na margem: usuarios locais acessam o gateway; sincronizacao ocorre depois.
-- Sem Raspberry Pi: Arduino mantem MANUAL/RECORD e o fail-safe; AUTO para o ESC pelo watchdog.
+- Sem Raspberry Pi: o Arduino mantém o controle MANUAL e o fail-safe; em AUTO o watchdog para o ESC. A gravação de rota é independente e fica no backend.
 - Sem aplicativo: nada muda no controle do barco.

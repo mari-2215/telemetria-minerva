@@ -11,16 +11,23 @@
 
 namespace {
 
-// Receptor FlySky: todos os canais usam interrupcao externa no Mega 2560.
+// Receptor FlySky do Azimutal.
+// Todos os quatro sinais usam interrupcao externa no Mega 2560:
+//   CH4 -> D2  : joystick horizontal, direcao +/-45 graus
+//   CH3 -> D3  : selecao travada de frente/re do pod
+//   CH2 -> D18 : potencia do propulsor
+//   CH1 -> D19 : latch fisico START/STOP do piloto automatico
 constexpr uint8_t kRudderInputPin = 2;
-constexpr uint8_t kThrottleInputPin = 3;
-constexpr uint8_t kModeInputPin = 18;
+constexpr uint8_t kDirectionInputPin = 3;
+constexpr uint8_t kPropulsionInputPin = 18;
 constexpr uint8_t kAutopilotLatchInputPin = 19;
 
 constexpr uint8_t kServo1Pin = 9;
 constexpr uint8_t kEscPin = 10;
 constexpr uint8_t kServo2Pin = 11;
 
+// D18 e D19 ficam reservados ao receptor.
+// O GPS permanece na Serial2, D16/D17.
 constexpr uint8_t kLm35Pin = A0;
 constexpr uint8_t kCurrentPin = A3;
 constexpr uint8_t kVoltagePin = A4;
@@ -32,8 +39,12 @@ constexpr uint16_t kRcCenterUs = 1500;
 constexpr uint16_t kRcMaxUs = 2000;
 constexpr uint16_t kRcDeadbandUs = 35;
 constexpr uint32_t kRcTimeoutUs = 120000UL;
-constexpr uint16_t kModeManualMaxUs = 1300;
-constexpr uint16_t kModeAutoMinUs = 1700;
+
+constexpr float kDirectionSelectThreshold = 0.35F;
+constexpr uint32_t kDirectionConfirmMs = 180UL;
+constexpr uint16_t kPropulsionStartInputUs = 1600;
+constexpr uint32_t kPropulsionArmNeutralMs = 500UL;
+
 constexpr uint16_t kLatchHighUs = 1700;
 constexpr uint32_t kLatchDebounceMs = 250;
 
@@ -51,8 +62,13 @@ constexpr uint16_t kServo2MinUs = 500;
 constexpr uint16_t kServo2MaxUs = 2500;
 constexpr bool kServo2Inverted = false;
 
-constexpr uint16_t kEscStopUs = 1000;
-constexpr uint16_t kEscMaxUs = 2000;
+// ESC medido no Azimutal:
+//   1500 us = neutro
+//   1600 us = inicio de movimento
+//   2500 us = maximo
+constexpr uint16_t kEscStopUs = 1500;
+constexpr uint16_t kEscStartUs = 1600;
+constexpr uint16_t kEscMaxUs = 2500;
 constexpr uint16_t kEscMaxStepUs = 6;
 
 constexpr uint32_t kControlIntervalMs = 10;
@@ -70,7 +86,7 @@ constexpr char kBoatId[] = "azimutal-01";
 constexpr uint16_t kRxPayloadCapacity = 384;
 constexpr uint8_t kRxHeaderBytes = 12;
 
-enum class ControlMode : uint8_t { Manual, Record, Auto, Failsafe };
+enum class ControlMode : uint8_t { Manual, Auto, Failsafe };
 
 struct RcChannel {
   uint8_t pin;
@@ -81,12 +97,12 @@ struct RcChannel {
 
 struct RcSnapshot {
   uint16_t rudderUs;
-  uint16_t throttleUs;
-  uint16_t modeUs;
+  uint16_t directionUs;
+  uint16_t propulsionUs;
   uint16_t latchUs;
   uint32_t rudderLastUs;
-  uint32_t throttleLastUs;
-  uint32_t modeLastUs;
+  uint32_t directionLastUs;
+  uint32_t propulsionLastUs;
   uint32_t latchLastUs;
 };
 
@@ -102,8 +118,8 @@ struct AutopilotState {
 };
 
 RcChannel rudderChannel = {kRudderInputPin, 0, kRcCenterUs, 0};
-RcChannel throttleChannel = {kThrottleInputPin, 0, kRcCenterUs, 0};
-RcChannel modeChannel = {kModeInputPin, 0, kRcCenterUs, 0};
+RcChannel directionChannel = {kDirectionInputPin, 0, kRcCenterUs, 0};
+RcChannel propulsionChannel = {kPropulsionInputPin, 0, kRcCenterUs, 0};
 RcChannel latchChannel = {kAutopilotLatchInputPin, 0, kRcMinUs, 0};
 
 Servo servo1;
@@ -116,10 +132,20 @@ Adafruit_ADXL345_Unified accelerometer(34501);
 bool accelerometerReady = false;
 bool rcHealthy = false;
 bool rcStateInitialized = false;
-bool recordingActive = false;
 bool failsafeActive = true;
 bool invalidCommandAlarm = false;
 bool commandTimeoutLatched = false;
+
+bool reverseDirection = false;
+bool pendingReverseDirection = false;
+bool directionCandidateActive = false;
+uint32_t directionCandidateSinceMs = 0;
+float directionNormalized = 0.0F;
+
+bool propulsionArmed = false;
+bool propulsionNeutralTimerActive = false;
+uint32_t propulsionNeutralSinceMs = 0;
+
 bool autopilotLatched = false;
 bool latchWasHigh = false;
 uint32_t lastLatchToggleMs = 0;
@@ -198,7 +224,6 @@ uint16_t updateCrc(uint16_t crc, uint8_t byte) {
 const char* modeName(ControlMode mode) {
   switch (mode) {
     case ControlMode::Manual: return "manual";
-    case ControlMode::Record: return "record";
     case ControlMode::Auto: return "auto";
     default: return "failsafe";
   }
@@ -242,20 +267,20 @@ void captureChannel(RcChannel& channel) {
 }
 
 void onRudderChange() { captureChannel(rudderChannel); }
-void onThrottleChange() { captureChannel(throttleChannel); }
-void onModeChange() { captureChannel(modeChannel); }
+void onDirectionChange() { captureChannel(directionChannel); }
+void onPropulsionChange() { captureChannel(propulsionChannel); }
 void onLatchChange() { captureChannel(latchChannel); }
 
 RcSnapshot readRcSnapshot() {
   RcSnapshot value;
   noInterrupts();
   value.rudderUs = rudderChannel.pulseUs;
-  value.throttleUs = throttleChannel.pulseUs;
-  value.modeUs = modeChannel.pulseUs;
+  value.directionUs = directionChannel.pulseUs;
+  value.propulsionUs = propulsionChannel.pulseUs;
   value.latchUs = latchChannel.pulseUs;
   value.rudderLastUs = rudderChannel.lastPulseUs;
-  value.throttleLastUs = throttleChannel.lastPulseUs;
-  value.modeLastUs = modeChannel.lastPulseUs;
+  value.directionLastUs = directionChannel.lastPulseUs;
+  value.propulsionLastUs = propulsionChannel.lastPulseUs;
   value.latchLastUs = latchChannel.lastPulseUs;
   interrupts();
   return value;
@@ -265,49 +290,192 @@ bool pulseHealthy(uint16_t pulseUs, uint32_t lastPulseUs, uint32_t nowUs) {
   return lastPulseUs != 0 && nowUs - lastPulseUs <= kRcTimeoutUs && pulseUs >= 900 && pulseUs <= 2100;
 }
 
-bool snapshotHealthy(const RcSnapshot& value, uint32_t nowUs) {
+bool driveChannelsHealthy(const RcSnapshot& value, uint32_t nowUs) {
   return pulseHealthy(value.rudderUs, value.rudderLastUs, nowUs) &&
-         pulseHealthy(value.throttleUs, value.throttleLastUs, nowUs) &&
-         pulseHealthy(value.modeUs, value.modeLastUs, nowUs);
+         pulseHealthy(value.directionUs, value.directionLastUs, nowUs) &&
+         pulseHealthy(value.propulsionUs, value.propulsionLastUs, nowUs);
+}
+
+bool latchChannelHealthy(const RcSnapshot& value, uint32_t nowUs) {
+  return pulseHealthy(value.latchUs, value.latchLastUs, nowUs);
 }
 
 float normalizeRc(uint16_t pulseUs) {
-  const int centered = static_cast<int>(pulseUs) - static_cast<int>(kRcCenterUs);
+  const int centered =
+      static_cast<int>(pulseUs) - static_cast<int>(kRcCenterUs);
   if (abs(centered) <= static_cast<int>(kRcDeadbandUs)) return 0.0F;
   if (centered < 0) {
-    return clampFloat(static_cast<float>(centered + kRcDeadbandUs) /
-                          static_cast<float>(kRcCenterUs - kRcMinUs - kRcDeadbandUs),
-                      -1.0F, 0.0F);
+    return clampFloat(
+        static_cast<float>(centered + kRcDeadbandUs) /
+            static_cast<float>(
+                kRcCenterUs - kRcMinUs - kRcDeadbandUs),
+        -1.0F,
+        0.0F);
   }
-  return clampFloat(static_cast<float>(centered - kRcDeadbandUs) /
-                        static_cast<float>(kRcMaxUs - kRcCenterUs - kRcDeadbandUs),
-                    0.0F, 1.0F);
+  return clampFloat(
+      static_cast<float>(centered - kRcDeadbandUs) /
+          static_cast<float>(
+              kRcMaxUs - kRcCenterUs - kRcDeadbandUs),
+      0.0F,
+      1.0F);
 }
 
-ControlMode requestedMode(const RcSnapshot& value, bool healthy) {
-  if (!healthy) return ControlMode::Failsafe;
-  if (value.modeUs < kModeManualMaxUs) return ControlMode::Manual;
-  if (value.modeUs > kModeAutoMinUs) return ControlMode::Auto;
-  return ControlMode::Record;
-}
+void updateDirectionLatch(float vertical, uint32_t nowMs) {
+  bool hasCandidate = false;
+  bool candidateReverse = reverseDirection;
 
-void updateAutopilotLatch(const RcSnapshot& value, uint32_t nowMs) {
-  const bool latchHealthy = pulseHealthy(value.latchUs, value.latchLastUs, micros());
-  const bool latchHigh = latchHealthy && value.latchUs >= kLatchHighUs;
-  if (controlMode != ControlMode::Auto) {
-    if (autopilotLatched) sendEvent("AUTOPILOT_LATCH_RELEASED");
-    autopilotLatched = false;
-    latchWasHigh = latchHigh;
+  if (vertical <= -kDirectionSelectThreshold) {
+    candidateReverse = true;
+    hasCandidate = true;
+  } else if (vertical >= kDirectionSelectThreshold) {
+    candidateReverse = false;
+    hasCandidate = true;
+  }
+
+  if (!hasCandidate || candidateReverse == reverseDirection) {
+    directionCandidateActive = false;
     return;
   }
-  if (latchHigh && !latchWasHigh && nowMs - lastLatchToggleMs >= kLatchDebounceMs) {
-    autopilotLatched = !autopilotLatched;
-    lastLatchToggleMs = nowMs;
+
+  if (!directionCandidateActive ||
+      pendingReverseDirection != candidateReverse) {
+    pendingReverseDirection = candidateReverse;
+    directionCandidateSinceMs = nowMs;
+    directionCandidateActive = true;
+    return;
+  }
+
+  if (nowMs - directionCandidateSinceMs >= kDirectionConfirmMs) {
+    reverseDirection = pendingReverseDirection;
+    directionCandidateActive = false;
+    sendEvent(
+        reverseDirection
+            ? "DIRECTION_REVERSE"
+            : "DIRECTION_FORWARD");
+  }
+}
+
+float manualPodAngle(float horizontal) {
+  const float deflection = horizontal * kRudderMaxDeg;
+  if (reverseDirection) {
+    return clampFloat(
+        kReverseCenterDeg - deflection,
+        0.0F,
+        270.0F);
+  }
+  return clampFloat(
+      kForwardCenterDeg + deflection,
+      0.0F,
+      270.0F);
+}
+
+float normalizePropulsion(uint16_t pulseUs) {
+  if (pulseUs < kPropulsionStartInputUs) return 0.0F;
+  const float fraction =
+      static_cast<float>(pulseUs - kPropulsionStartInputUs) /
+      static_cast<float>(kRcMaxUs - kPropulsionStartInputUs);
+  return clampFloat(fraction, 0.0F, 1.0F);
+}
+
+uint16_t manualPropulsionToEscUs(uint16_t pulseUs) {
+  if (pulseUs < kPropulsionStartInputUs) return kEscStopUs;
+  const float fraction = normalizePropulsion(pulseUs);
+  return clampU16(
+      lroundf(
+          kEscStartUs +
+          fraction *
+              static_cast<float>(kEscMaxUs - kEscStartUs)),
+      kEscStartUs,
+      kEscMaxUs);
+}
+
+uint16_t autopilotThrottleToEscUs(float throttle) {
+  const float normalized = clampFloat(throttle, 0.0F, 1.0F);
+  if (normalized <= 0.0F) return kEscStopUs;
+  return clampU16(
+      lroundf(
+          kEscStartUs +
+          normalized *
+              static_cast<float>(kEscMaxUs - kEscStartUs)),
+      kEscStartUs,
+      kEscMaxUs);
+}
+
+void resetManualPropulsionArming() {
+  propulsionArmed = false;
+  propulsionNeutralTimerActive = false;
+  propulsionNeutralSinceMs = 0;
+}
+
+void updateManualPropulsionArming(
+    uint16_t propulsionUs,
+    uint32_t nowMs) {
+  if (propulsionArmed) return;
+
+  const bool neutral =
+      propulsionUs <= kRcCenterUs + kRcDeadbandUs;
+  if (!neutral) {
+    propulsionNeutralTimerActive = false;
+    return;
+  }
+
+  if (!propulsionNeutralTimerActive) {
+    propulsionNeutralTimerActive = true;
+    propulsionNeutralSinceMs = nowMs;
+    return;
+  }
+
+  if (nowMs - propulsionNeutralSinceMs >=
+      kPropulsionArmNeutralMs) {
+    propulsionArmed = true;
+    propulsionNeutralTimerActive = false;
+    sendEvent("PROPULSION_ARMED");
+  }
+}
+
+ControlMode requestedMode(bool healthy) {
+  if (!healthy) return ControlMode::Failsafe;
+  return autopilotLatched
+      ? ControlMode::Auto
+      : ControlMode::Manual;
+}
+
+void updateAutopilotLatch(
+    const RcSnapshot& value,
+    uint32_t nowMs,
+    bool driveHealthy) {
+  const bool latchHealthy =
+      latchChannelHealthy(value, micros());
+  const bool latchHigh =
+      latchHealthy && value.latchUs >= kLatchHighUs;
+
+  if (!driveHealthy || !latchHealthy) {
+    if (autopilotLatched) {
+      sendEvent("AUTOPILOT_LATCH_RELEASED");
+    }
+    autopilotLatched = false;
     autopilot.hasCommand = false;
     currentEscUs = kEscStopUs;
     esc.writeMicroseconds(currentEscUs);
-    sendEvent(autopilotLatched ? "AUTOPILOT_LATCHED" : "AUTOPILOT_UNLATCHED");
+    latchWasHigh = false;
+    return;
   }
+
+  if (latchHigh &&
+      !latchWasHigh &&
+      nowMs - lastLatchToggleMs >= kLatchDebounceMs) {
+    autopilotLatched = !autopilotLatched;
+    lastLatchToggleMs = nowMs;
+    autopilot.hasCommand = false;
+    commandTimeoutLatched = false;
+    currentEscUs = kEscStopUs;
+    esc.writeMicroseconds(currentEscUs);
+    sendEvent(
+        autopilotLatched
+            ? "AUTOPILOT_LATCHED"
+            : "AUTOPILOT_UNLATCHED");
+  }
+
   latchWasHigh = latchHigh;
 }
 
@@ -527,66 +695,95 @@ SerialFrameDecoder serialDecoder;
 
 void transitionMode(ControlMode nextMode) {
   if (nextMode == controlMode) return;
+
   const ControlMode previous = controlMode;
   controlMode = nextMode;
   sendEvent("MODE_CHANGED");
-  if (previous == ControlMode::Record) sendEvent("RECORDING_STOPPED");
-  if (nextMode == ControlMode::Record) sendEvent("RECORDING_STARTED");
-  if (previous == ControlMode::Auto) sendEvent("AUTOPILOT_DISABLED");
-  if (nextMode == ControlMode::Auto) sendEvent("AUTOPILOT_ENABLED");
-  recordingActive = nextMode == ControlMode::Record;
-  if (previous == ControlMode::Auto || nextMode == ControlMode::Auto) {
-    autopilotLatched = false;
-    autopilot.hasCommand = false;
-    currentEscUs = kEscStopUs;
-    esc.writeMicroseconds(currentEscUs);
+
+  if (previous == ControlMode::Auto) {
+    sendEvent("AUTOPILOT_DISABLED");
   }
+  if (nextMode == ControlMode::Auto) {
+    sendEvent("AUTOPILOT_ENABLED");
+  }
+
+  autopilot.hasCommand = false;
+  commandTimeoutLatched = false;
+  currentEscUs = kEscStopUs;
+  esc.writeMicroseconds(currentEscUs);
+
+  // Ao retornar ao manual, CH2 deve ficar neutro por 500 ms.
+  resetManualPropulsionArming();
 }
 
 void updateControl(uint32_t nowMs) {
   const RcSnapshot snapshot = readRcSnapshot();
-  const bool healthy = snapshotHealthy(snapshot, micros());
+  const uint32_t nowUs = micros();
+  const bool healthy =
+      driveChannelsHealthy(snapshot, nowUs);
+
   if (!rcStateInitialized || healthy != rcHealthy) {
     rcHealthy = healthy;
     rcStateInitialized = true;
-    sendEvent(healthy ? "RC_SIGNAL_RECOVERED" : "RC_SIGNAL_LOST");
+    sendEvent(
+        healthy
+            ? "RC_SIGNAL_RECOVERED"
+            : "RC_SIGNAL_LOST");
   } else {
     rcHealthy = healthy;
   }
-  transitionMode(requestedMode(snapshot, healthy));
-  updateAutopilotLatch(snapshot, nowMs);
+
+  // CH1 decide MANUAL/AUTO. CH3 decide somente FRENTE/RE.
+  updateAutopilotLatch(snapshot, nowMs, healthy);
+  transitionMode(requestedMode(healthy));
 
   uint16_t requestedEscUs = kEscStopUs;
   float requestedPodDeg = kSafePodDeg;
   float requestedThrottle = 0.0F;
   float requestedRudder = 0.0F;
-  bool safe = false;
+  bool safe = true;
 
-  if (controlMode == ControlMode::Manual || controlMode == ControlMode::Record) {
+  if (controlMode == ControlMode::Manual) {
+    safe = false;
+
     requestedRudder = normalizeRc(snapshot.rudderUs);
-    requestedThrottle = normalizeRc(snapshot.throttleUs);
-    requestedPodDeg = (requestedThrottle >= 0.0F ? kForwardCenterDeg : kReverseCenterDeg) +
-                      requestedRudder * kRudderMaxDeg;
-    requestedEscUs = clampU16(
-        lroundf(kEscStopUs + fabs(requestedThrottle) * (kEscMaxUs - kEscStopUs)),
-        kEscStopUs, kEscMaxUs);
+
+    directionNormalized =
+        normalizeRc(snapshot.directionUs);
+    updateDirectionLatch(directionNormalized, nowMs);
+    requestedPodDeg =
+        manualPodAngle(requestedRudder);
+
+    updateManualPropulsionArming(
+        snapshot.propulsionUs,
+        nowMs);
+    if (propulsionArmed) {
+      requestedThrottle =
+          normalizePropulsion(snapshot.propulsionUs);
+      requestedEscUs =
+          manualPropulsionToEscUs(
+              snapshot.propulsionUs);
+    }
   } else if (controlMode == ControlMode::Auto) {
     const bool fresh = commandFresh(nowMs);
-    if (!fresh && autopilot.hasCommand && !commandTimeoutLatched) {
+
+    if (!fresh &&
+        autopilot.hasCommand &&
+        !commandTimeoutLatched) {
       commandTimeoutLatched = true;
       sendEvent("COMMAND_TIMEOUT");
     }
-    if (autopilotLatched && fresh && gpsValidForAutopilot()) {
+
+    if (autopilotLatched &&
+        fresh &&
+        gpsValidForAutopilot()) {
+      safe = false;
       requestedPodDeg = autopilot.targetPodDeg;
       requestedThrottle = autopilot.throttleNorm;
-      requestedEscUs = clampU16(
-          lroundf(kEscStopUs + requestedThrottle * (kEscMaxUs - kEscStopUs)),
-          kEscStopUs, kEscMaxUs);
-    } else {
-      safe = true;
+      requestedEscUs =
+          autopilotThrottleToEscUs(
+              requestedThrottle);
     }
-  } else {
-    safe = true;
   }
 
   if (safe) {
@@ -595,16 +792,40 @@ void updateControl(uint32_t nowMs) {
     requestedThrottle = 0.0F;
     requestedRudder = 0.0F;
   }
+
   failsafeActive = safe;
-  targetPodDeg = clampFloat(requestedPodDeg, 0.0F, 270.0F);
+  targetPodDeg =
+      clampFloat(requestedPodDeg, 0.0F, 270.0F);
   rudderNormalized = requestedRudder;
   throttleNormalized = requestedThrottle;
 
-  // O motor para imediatamente em qualquer estado seguro; a partida normal e suavizada.
-  currentEscUs = safe ? kEscStopUs : approachU16(currentEscUs, requestedEscUs, kEscMaxStepUs);
-  currentPodDeg = approachFloat(currentPodDeg, targetPodDeg, kServoMaxStepDeg);
-  currentServo1Us = angleToServoUs(currentPodDeg, kServo1MinUs, kServo1MaxUs, kServo1Inverted);
-  currentServo2Us = angleToServoUs(currentPodDeg, kServo2MinUs, kServo2MaxUs, kServo2Inverted);
+  currentEscUs =
+      safe
+          ? kEscStopUs
+          : approachU16(
+                currentEscUs,
+                requestedEscUs,
+                kEscMaxStepUs);
+
+  currentPodDeg =
+      approachFloat(
+          currentPodDeg,
+          targetPodDeg,
+          kServoMaxStepDeg);
+
+  currentServo1Us =
+      angleToServoUs(
+          currentPodDeg,
+          kServo1MinUs,
+          kServo1MaxUs,
+          kServo1Inverted);
+  currentServo2Us =
+      angleToServoUs(
+          currentPodDeg,
+          kServo2MinUs,
+          kServo2MaxUs,
+          kServo2Inverted);
+
   servo1.writeMicroseconds(currentServo1Us);
   servo2.writeMicroseconds(currentServo2Us);
   esc.writeMicroseconds(currentEscUs);
@@ -670,14 +891,18 @@ void transmitTelemetry(uint32_t nowMs) {
 
   JsonObject control = telemetryDocument["control"].to<JsonObject>();
   control["mode"] = modeName(controlMode);
-  control["recording_active"] = recordingActive;
+  // A gravacao de rota e controlada pelo app/backend.
+  control["recording_active"] = false;
   control["rc_healthy"] = rcHealthy;
   control["failsafe_active"] = failsafeActive;
-  control["rudder_pwm_us"] = rc.rudderUs;
-  control["throttle_pwm_us"] = rc.throttleUs;
-  control["mode_pwm_us"] = rc.modeUs;
-  control["latch_pwm_us"] = rc.latchUs;
-  control["latch_channel_healthy"] = pulseHealthy(rc.latchUs, rc.latchLastUs, micros());
+  control["rudder_pwm_us"] = rc.rudderUs;          // CH4
+  control["direction_pwm_us"] = rc.directionUs;    // CH3
+  control["propulsion_pwm_us"] = rc.propulsionUs;  // CH2
+  control["latch_pwm_us"] = rc.latchUs;            // CH1
+  control["direction_reverse"] = reverseDirection;
+  control["propulsion_armed"] = propulsionArmed;
+  control["latch_channel_healthy"] =
+      latchChannelHealthy(rc, micros());
 
   JsonObject autoState = telemetryDocument["autopilot"].to<JsonObject>();
   autoState["armed"] = controlMode == ControlMode::Auto;
@@ -697,7 +922,10 @@ void transmitTelemetry(uint32_t nowMs) {
   propulsion["target_pod_angle_deg"] = targetPodDeg;
   propulsion["rudder_norm"] = rudderNormalized;
   propulsion["steering_norm"] = autopilotSteeringNorm;
-  propulsion["drive_direction"] = autopilotDriveDirection;
+  propulsion["drive_direction"] =
+      controlMode == ControlMode::Auto
+          ? autopilotDriveDirection
+          : (reverseDirection ? "reverse" : "forward");
   propulsion["throttle_norm"] = throttleNormalized;
   propulsion["servo1_pwm_us"] = currentServo1Us;
   propulsion["servo2_pwm_us"] = currentServo2Us;
@@ -742,8 +970,8 @@ void transmitTelemetry(uint32_t nowMs) {
 
 void setup() {
   pinMode(kRudderInputPin, INPUT);
-  pinMode(kThrottleInputPin, INPUT);
-  pinMode(kModeInputPin, INPUT);
+  pinMode(kDirectionInputPin, INPUT);
+  pinMode(kPropulsionInputPin, INPUT);
   pinMode(kAutopilotLatchInputPin, INPUT);
   pinMode(kWaterPin, INPUT_PULLUP);
 
@@ -763,10 +991,22 @@ void setup() {
   servo2.writeMicroseconds(currentServo2Us);
   esc.writeMicroseconds(kEscStopUs);
 
-  attachInterrupt(digitalPinToInterrupt(kRudderInputPin), onRudderChange, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(kThrottleInputPin), onThrottleChange, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(kModeInputPin), onModeChange, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(kAutopilotLatchInputPin), onLatchChange, CHANGE);
+  attachInterrupt(
+      digitalPinToInterrupt(kRudderInputPin),
+      onRudderChange,
+      CHANGE);
+  attachInterrupt(
+      digitalPinToInterrupt(kDirectionInputPin),
+      onDirectionChange,
+      CHANGE);
+  attachInterrupt(
+      digitalPinToInterrupt(kPropulsionInputPin),
+      onPropulsionChange,
+      CHANGE);
+  attachInterrupt(
+      digitalPinToInterrupt(kAutopilotLatchInputPin),
+      onLatchChange,
+      CHANGE);
 }
 
 void loop() {

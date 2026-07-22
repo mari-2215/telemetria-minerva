@@ -34,17 +34,16 @@
 ## Piloto automático
 
 1. Envie a rota e confira o minimapa.
-2. Coloque o rádio em AUTO; o motor deve continuar parado.
-3. Acione fisicamente o latch.
-4. Confirme a partida somente com GPS, RC e área livres.
-5. Em retorno de 180 graus, o motor para enquanto o pod gira para a orientação de ré.
-6. O ADXL345 reduz potência em inclinação ou aceleração excessiva.
-7. Mantenha o operador pronto para retornar a MANUAL.
+2. Mantenha CH2 neutro e confirme a área livre.
+3. Acione o latch CH1; o motor continua parado até GPS e comando fresco.
+4. CH3 permanece dedicado à seleção manual FRENTE/RÉ.
+5. Confirme os dois servos em D9 e D11 acompanhando o mesmo ângulo.
+6. Acione novamente CH1 para cancelar AUTO.
 
 ## Emergência e encerramento
 
-- Retorne imediatamente a MANUAL em resposta inesperada.
-- Solte ou alterne o latch para cancelar comandos automáticos.
+- Acione novamente o latch CH1 ou use a parada física em resposta inesperada.
+- Alterne o latch CH1 para cancelar comandos automáticos.
 - Em perda de RC, GPS ou comando fresco, o ESC deve ir à parada.
 - Em água, fumaça, cheiro ou aquecimento anormal, desligue a alimentação.
-- Ao encerrar: MANUAL, neutro, latch desligado, retirar da água e desconectar bateria.
+- Ao encerrar: CH1 desarmado, CH2 neutro, retirar da água e desconectar a bateria.

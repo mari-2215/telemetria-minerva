@@ -13,7 +13,7 @@ Plataforma de telemetria para os modelos navais da Minerva Nautica, com cobertur
 - aplicativo Flutter para Android, iOS e Web;
 - operacao degradada quando a internet ou o radio falhar.
 
-> O piloto automatico e experimental e nunca substitui o controle RC, o fail-safe nem a parada de emergencia. O Arduino so aceita comandos da Raspberry quando o canal CH3 esta fisicamente em AUTO; ao voltar para MANUAL, o comando remoto e cancelado imediatamente.
+> O piloto automatico e experimental e nunca substitui o controle RC, o fail-safe nem a parada de emergencia. No Azimutal, o Arduino so aceita comandos da Raspberry quando o latch fisico do CH1 esta acionado; um novo acionamento, a perda do CH1 ou a perda dos canais de conducao cancela o comando remoto e para o ESC.
 
 ## Arquitetura
 

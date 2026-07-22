@@ -33,26 +33,49 @@ Nao usar o pequeno LM2596 do desenho para alimentar o Raspberry Pi junto com rad
 
 Adicionar fusivel proprio, protecao contra inversao, TVS, filtro e desligamento limpo. O circuito de propulsao deve ficar separado da alimentacao logica tanto quanto praticavel.
 
-## Pinagem do firmware integrado
+## Pinagem do firmware integrado — Azimutal
 
-| Funcao | Mega 2560 |
+### Receptor FlySky
+
+| Função real | Canal | Mega 2560 |
+| --- | ---: | --- |
+| Direção horizontal dos dois pods, ±45° | CH4 | D2 |
+| Seleção travada FRENTE/RÉ, giro de 180° | CH3 | D3 |
+| Potência do propulsor | CH2 | D18 |
+| Latch físico START/STOP do piloto automático | CH1 | D19 |
+
+O receptor é alimentado uma única vez pelo BEC ou pela alimentação prevista
+para o rádio. Para cada canal adicional, o Arduino precisa do sinal e do GND
+comum. Não una positivos provenientes de fontes diferentes.
+
+### Atuadores
+
+| Função | Mega 2560 |
 | --- | --- |
-| CH1 leme | D2, interrupcao externa |
-| CH2 acelerador | D3, interrupcao externa |
-| CH3 modo MANUAL/RECORD/AUTO | D18, interrupcao externa |
-| CH4 botao latch START/STOP do piloto | D19, interrupcao externa |
-| Servo azimutal 1 | D9 |
-| ESC | D10 |
-| Servo azimutal 2 | D11 |
-| GPS TX -> Mega RX2 | D17 |
-| GPS RX <- Mega TX2 | D16 |
+| Sinal do servo azimutal 1 | D9 |
+| Sinal do ESC | D10 |
+| Sinal do servo azimutal 2 | D11 |
+
+Os dois servos recebem o mesmo ângulo lógico. Caso a montagem seja espelhada,
+use `kServo1Inverted` e `kServo2Inverted` individualmente. Os servos recebem
+somente o sinal do Mega e alimentação de BEC/fonte externa dimensionada.
+GND do BEC, servos, ESC, receptor e Mega deve ser comum.
+
+### Sensores e comunicação
+
+| Função | Mega 2560 |
+| --- | --- |
+| GPS TX → Mega RX2 | D17 |
+| GPS RX ← Mega TX2, opcional | D16 |
 | ADXL345 | SDA D20 / SCL D21 |
-| LM35 / ACS712 / tensao | A0 / A3 / A4 |
-| DHT11 / sensor de agua | D22 / D23 |
+| LM35 | A0 |
+| ACS712 | A3 |
+| Divisor de tensão | A4 |
+| DHT11 | D22 |
+| Sensor de água, ativo em LOW | D23 |
 
-O canal CH4 deve gerar PWM convencional de aproximadamente 1000 a 2000 us. Cada borda de baixo para alto alterna o latch. O firmware nao exige esse canal para manter o modo manual seguro, mas o piloto automatico nunca movimenta o motor sem um latch valido.
-
-O GPS precisa estar na `Serial2`, pois D18 e D19 sao usados pelo receptor. Raspberry e Mega conversam por USB a 115200 baud. Servo e ESC usam fonte/BEC propria; somente os GNDs ficam em comum.
+D18 e D19 ficam reservados ao receptor. O GPS permanece na `Serial2`,
+D16/D17. Raspberry e Mega conversam por USB a 115200 baud.
 
 ## Melhorias recomendadas nos sensores
 

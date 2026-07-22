@@ -62,9 +62,16 @@ A Raspberry consulta uma missao pendente a cada 5 segundos quando existe acesso 
 
 ## Segurança do piloto automático
 
-O CH3 apenas coloca o sistema em estado AUTO/armado. O motor continua parado até o canal de latch, conectado ao CH4 do receptor, receber uma borda de acionamento. Cada novo toque alterna START/STOP.
+No Azimutal, CH1 entra no D19 e funciona como latch físico START/STOP.
+CH3 fica exclusivamente na seleção travada FRENTE/RÉ, CH2 controla a
+potência manual e CH4 controla o movimento horizontal.
 
-Ao sair de AUTO, perder sinal RC, perder GPS ou deixar de receber comandos frescos da Raspberry, o Arduino cancela o latch e manda o ESC para parada. O aplicativo não substitui esse intertravamento físico.
+O motor continua parado em AUTO até existir latch válido, RC saudável, GPS
+válido e comando fresco da Raspberry. Perda do CH1, dos canais de condução,
+do GPS ou do watchdog cancela o comando e envia 1500 us ao ESC.
+
+A gravação de trajetória é independente dos canais RC e é controlada pelo
+perfil de capitão no aplicativo.
 
 ## Aplicativo
 
