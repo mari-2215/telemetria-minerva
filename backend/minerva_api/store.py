@@ -122,7 +122,7 @@ class TelemetryStore:
                 self._sync_mission_authorization_from_telemetry(telemetry)
                 self._expire_stale_recording_locked(
                     telemetry.boat_id,
-                    Telemetry.utc_now(),
+                    telemetry.recorded_at,
                 )
                 self._capture_active_recording(telemetry)
             return inserted

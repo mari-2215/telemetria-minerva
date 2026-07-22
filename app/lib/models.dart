@@ -54,21 +54,32 @@ class Telemetry {
   String get boatId => raw['boat_id'] as String;
   int get sequence => raw['sequence'] as int;
   DateTime get recordedAt => DateTime.parse(raw['recorded_at'] as String);
-  Map<String, dynamic> get position => (raw['position'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get power => (raw['power'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get environment => (raw['environment'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get motion => (raw['motion'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get propulsion => (raw['propulsion'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get control => (raw['control'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get autopilot => (raw['autopilot'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get link => (raw['link'] as Map?)?.cast<String, dynamic>() ?? const {};
-  Map<String, dynamic> get status => (raw['status'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get position =>
+      (raw['position'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get power =>
+      (raw['power'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get environment =>
+      (raw['environment'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get motion =>
+      (raw['motion'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get propulsion =>
+      (raw['propulsion'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get control =>
+      (raw['control'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get autopilot =>
+      (raw['autopilot'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get link =>
+      (raw['link'] as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get status =>
+      (raw['status'] as Map?)?.cast<String, dynamic>() ?? const {};
   double? get latitude => (position['latitude_deg'] as num?)?.toDouble();
   double? get longitude => (position['longitude_deg'] as num?)?.toDouble();
-  double? get temperatureC => (environment['electronics_temp_c'] as num?)?.toDouble();
+  double? get temperatureC =>
+      (environment['electronics_temp_c'] as num?)?.toDouble();
   String get controlMode => control['mode']?.toString() ?? 'desconhecido';
   bool get autopilotLatched => autopilot['latched'] as bool? ?? false;
-  bool get autopilotArmed => autopilot['armed'] as bool? ?? controlMode == 'auto';
+  bool get autopilotArmed =>
+      autopilot['armed'] as bool? ?? controlMode == 'auto';
   bool get rcHealthy => control['rc_healthy'] as bool? ?? false;
 
   bool get motorOn {
@@ -76,7 +87,8 @@ class Telemetry {
     if (explicit is bool) return explicit;
     final esc = (propulsion['esc_pwm_us'] as num?)?.toDouble();
     if (esc != null) return esc > 1020;
-    return ((propulsion['throttle_norm'] as num?)?.toDouble() ?? 0).abs() > 0.02;
+    return ((propulsion['throttle_norm'] as num?)?.toDouble() ?? 0).abs() >
+        0.02;
   }
 
   double? _motionNumber(String key) {
@@ -98,21 +110,27 @@ class Telemetry {
     final x = (motion['accel_x_mps2'] as num?)?.toDouble();
     final y = (motion['accel_y_mps2'] as num?)?.toDouble();
     final z = (motion['accel_z_mps2'] as num?)?.toDouble();
-    return x == null || y == null || z == null ? 0 : math.atan2(-x, math.sqrt(y * y + z * z)) * 180 / math.pi;
+    return x == null || y == null || z == null
+        ? 0
+        : math.atan2(-x, math.sqrt(y * y + z * z)) * 180 / math.pi;
   }
 
   double? get yawDeg => _motionNumber('yaw_deg');
-  List<String> get alarms => ((status['alarms'] as List?) ?? const []).map((value) => value.toString()).toList();
+  List<String> get alarms => ((status['alarms'] as List?) ?? const [])
+      .map((value) => value.toString())
+      .toList();
   factory Telemetry.fromJson(Map<String, dynamic> json) => Telemetry(raw: json);
 }
 
 class MissionWaypoint {
-  const MissionWaypoint({required this.latitude, required this.longitude, this.toleranceM = 8});
+  const MissionWaypoint(
+      {required this.latitude, required this.longitude, this.toleranceM = 8});
   final double latitude;
   final double longitude;
   final double toleranceM;
 
-  factory MissionWaypoint.fromJson(Map<String, dynamic> json) => MissionWaypoint(
+  factory MissionWaypoint.fromJson(Map<String, dynamic> json) =>
+      MissionWaypoint(
         latitude: (json['latitude_deg'] as num).toDouble(),
         longitude: (json['longitude_deg'] as num).toDouble(),
         toleranceM: (json['tolerance_m'] as num?)?.toDouble() ?? 8,
@@ -155,7 +173,8 @@ class Mission {
         name: json['name'] as String,
         status: json['status'] as String,
         waypoints: ((json['waypoints'] as List?) ?? const [])
-            .map((value) => MissionWaypoint.fromJson((value as Map).cast<String, dynamic>()))
+            .map((value) => MissionWaypoint.fromJson(
+                (value as Map).cast<String, dynamic>()))
             .toList(),
         cruiseThrottle: (json['cruise_throttle'] as num?)?.toDouble() ?? 0.45,
         strategy: json['strategy'] as String? ?? 'balanced',
@@ -190,7 +209,8 @@ class RouteRecording {
         name: json['name'] as String,
         status: json['status'] as String,
         points: ((json['points'] as List?) ?? const [])
-            .map((value) => MissionWaypoint.fromJson((value as Map).cast<String, dynamic>()))
+            .map((value) => MissionWaypoint.fromJson(
+                (value as Map).cast<String, dynamic>()))
             .toList(),
         startedAt: DateTime.parse(json['started_at'] as String),
         cruiseThrottle: (json['cruise_throttle'] as num?)?.toDouble() ?? 0.45,

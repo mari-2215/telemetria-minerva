@@ -28,7 +28,10 @@ void main() {
         'yaw_deg': 127.75,
       },
       'control': {'mode': 'auto'},
-      'status': {'severity': 'critical', 'alarms': ['WATER_DETECTED']},
+      'status': {
+        'severity': 'critical',
+        'alarms': ['WATER_DETECTED']
+      },
     });
     expect(telemetry.sequence, 42);
     expect(telemetry.alarms, ['WATER_DETECTED']);

@@ -40,8 +40,7 @@ List<LatLng> routePathWithCurrent({
 double _bearing(LatLng from, LatLng to) {
   final lat1 = from.latitude * math.pi / 180.0;
   final lat2 = to.latitude * math.pi / 180.0;
-  final deltaLon =
-      (to.longitude - from.longitude) * math.pi / 180.0;
+  final deltaLon = (to.longitude - from.longitude) * math.pi / 180.0;
   final y = math.sin(deltaLon) * math.cos(lat2);
   final x = math.cos(lat1) * math.sin(lat2) -
       math.sin(lat1) * math.cos(lat2) * math.cos(deltaLon);
@@ -53,8 +52,7 @@ double _turnSeverity(
   LatLng point,
   LatLng next,
 ) {
-  var delta =
-      (_bearing(point, next) - _bearing(previous, point)).abs();
+  var delta = (_bearing(point, next) - _bearing(previous, point)).abs();
   while (delta > math.pi) {
     delta = (2 * math.pi - delta).abs();
   }
@@ -107,15 +105,13 @@ List<double> _nodePowers(
     );
 
     if (severity >= 0.82) {
-      powers[index] = _isNetuno(boatId)
-          ? 0.0
-          : math.max(minimumMoving, maximum * 0.45);
+      powers[index] =
+          _isNetuno(boatId) ? 0.0 : math.max(minimumMoving, maximum * 0.45);
       continue;
     }
 
     final value = maximum * (1.0 - penalty * severity);
-    powers[index] =
-        value.clamp(minimumMoving, maximum).toDouble();
+    powers[index] = value.clamp(minimumMoving, maximum).toDouble();
   }
 
   return powers;
@@ -137,8 +133,7 @@ double _segmentPower(
   }
 
   if (localProgress > 1.0 - maneuverZone) {
-    final progress =
-        (localProgress - (1.0 - maneuverZone)) / maneuverZone;
+    final progress = (localProgress - (1.0 - maneuverZone)) / maneuverZone;
     return maximum + (end - maximum) * progress;
   }
 
@@ -198,9 +193,7 @@ List<Polyline> buildRoutePowerPolylines({
   final result = <Polyline>[];
   const subdivisions = 24;
 
-  for (var segment = 0;
-      segment < path.length - 1;
-      segment++) {
+  for (var segment = 0; segment < path.length - 1; segment++) {
     final from = path[segment];
     final to = path[segment + 1];
 
@@ -211,10 +204,8 @@ List<Polyline> buildRoutePowerPolylines({
       final t1 = (slice + 1) / subdivisions;
 
       LatLng interpolate(double t) => LatLng(
-            from.latitude +
-                (to.latitude - from.latitude) * t,
-            from.longitude +
-                (to.longitude - from.longitude) * t,
+            from.latitude + (to.latitude - from.latitude) * t,
+            from.longitude + (to.longitude - from.longitude) * t,
           );
 
       final power = _segmentPower(
@@ -282,9 +273,7 @@ List<RoutePowerLabel> buildRoutePowerLabels({
       labels.add(
         RoutePowerLabel(
           position: point,
-          text: _isNetuno(boatId)
-              ? 'PARA + RÉ'
-              : 'GIRO 180°',
+          text: _isNetuno(boatId) ? 'PARA + RÉ' : 'GIRO 180°',
           power: powers[index],
         ),
       );
@@ -441,12 +430,8 @@ class RoutePreviewMap extends StatelessWidget {
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                shape: circular
-                    ? BoxShape.circle
-                    : BoxShape.rectangle,
-                borderRadius: circular
-                    ? null
-                    : BorderRadius.circular(24),
+                shape: circular ? BoxShape.circle : BoxShape.rectangle,
+                borderRadius: circular ? null : BorderRadius.circular(24),
                 border: Border.all(
                   color: Theme.of(context)
                       .colorScheme
@@ -456,8 +441,7 @@ class RoutePreviewMap extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        Colors.black.withValues(alpha: 0.20),
+                    color: Colors.black.withValues(alpha: 0.20),
                     blurRadius: 18,
                     spreadRadius: 1,
                   ),
@@ -564,11 +548,13 @@ class RouteMiniMap extends StatelessWidget {
     required this.mission,
     this.currentPosition,
     this.liveStart = false,
+    this.courseDeg,
   });
 
   final Mission mission;
   final LatLng? currentPosition;
   final bool liveStart;
+  final double? courseDeg;
 
   @override
   Widget build(BuildContext context) {
@@ -591,8 +577,7 @@ class RouteMiniMap extends StatelessWidget {
           children: [
             RoutePreviewMap(
               points: points,
-              currentPosition:
-                  liveStart ? currentPosition : null,
+              currentPosition: liveStart ? currentPosition : null,
               strategy: mission.strategy,
               cruiseThrottle: mission.cruiseThrottle,
               boatId: mission.boatId,
@@ -600,6 +585,11 @@ class RouteMiniMap extends StatelessWidget {
               circular: true,
               opacity: 0.86,
               showLegend: false,
+            ),
+            Positioned(
+              right: 9,
+              top: 9,
+              child: _MiniMapCompass(courseDeg: courseDeg),
             ),
             Positioned(
               left: 14,
@@ -636,6 +626,56 @@ class RouteMiniMap extends StatelessWidget {
   }
 }
 
+class _MiniMapCompass extends StatelessWidget {
+  const _MiniMapCompass({required this.courseDeg});
+
+  final double? courseDeg;
+
+  @override
+  Widget build(BuildContext context) {
+    final heading = (courseDeg ?? 0) % 360;
+    return Semantics(
+      label: courseDeg == null
+          ? 'Bússola: rumo indisponível'
+          : 'Bússola: rumo ${heading.round()} graus',
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: const Color(0xE6082147),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 1.5),
+          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 7)],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const Positioned(
+              top: 2,
+              child: Text(
+                'N',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Transform.rotate(
+              angle: heading * math.pi / 180,
+              child: const Icon(
+                Icons.navigation_rounded,
+                color: Color(0xFFFACC15),
+                size: 24,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _RoutePreviewPainter extends CustomPainter {
   const _RoutePreviewPainter({
     required this.points,
@@ -658,17 +698,13 @@ class _RoutePreviewPainter extends CustomPainter {
     final dark = brightness == Brightness.dark;
     canvas.drawRect(
       Offset.zero & size,
-      Paint()
-        ..color = dark
-            ? const Color(0xFF07182D)
-            : const Color(0xFFE4EDF5),
+      Paint()..color = dark ? const Color(0xFF07182D) : const Color(0xFFE4EDF5),
     );
 
     final grid = Paint()
       ..color = dark
           ? Colors.white.withValues(alpha: 0.055)
-          : const Color(0xFF082B5C)
-              .withValues(alpha: 0.07)
+          : const Color(0xFF082B5C).withValues(alpha: 0.07)
       ..strokeWidth = 1;
 
     for (var index = 1; index < 6; index++) {
@@ -706,23 +742,15 @@ class _RoutePreviewPainter extends CustomPainter {
 
     final latSpan = math.max(maxLat - minLat, 0.00001);
     final lonSpan = math.max(maxLon - minLon, 0.00001);
-    final padding =
-        math.min(size.width, size.height) * 0.16;
+    final padding = math.min(size.width, size.height) * 0.16;
 
     Offset project(LatLng point) {
-      final usableWidth =
-          math.max(1.0, size.width - padding * 2);
-      final usableHeight =
-          math.max(1.0, size.height - padding * 2);
-      final x = padding +
-          (point.longitude - minLon) /
-              lonSpan *
-              usableWidth;
+      final usableWidth = math.max(1.0, size.width - padding * 2);
+      final usableHeight = math.max(1.0, size.height - padding * 2);
+      final x = padding + (point.longitude - minLon) / lonSpan * usableWidth;
       final y = size.height -
           padding -
-          (point.latitude - minLat) /
-              latSpan *
-              usableHeight;
+          (point.latitude - minLat) / latSpan * usableHeight;
       return Offset(x, y);
     }
 
@@ -740,15 +768,11 @@ class _RoutePreviewPainter extends CustomPainter {
       );
       const subdivisions = 24;
 
-      for (var segment = 0;
-          segment < path.length - 1;
-          segment++) {
+      for (var segment = 0; segment < path.length - 1; segment++) {
         final start = project(path[segment]);
         final end = project(path[segment + 1]);
 
-        for (var slice = 0;
-            slice < subdivisions;
-            slice++) {
+        for (var slice = 0; slice < subdivisions; slice++) {
           final t0 = slice / subdivisions;
           final t1 = (slice + 1) / subdivisions;
           final a = Offset.lerp(start, end, t0)!;
@@ -764,8 +788,7 @@ class _RoutePreviewPainter extends CustomPainter {
             a,
             b,
             Paint()
-              ..color =
-                  Colors.black.withValues(alpha: 0.22)
+              ..color = Colors.black.withValues(alpha: 0.22)
               ..strokeWidth = 9
               ..strokeCap = StrokeCap.round,
           );
@@ -792,9 +815,7 @@ class _RoutePreviewPainter extends CustomPainter {
       canvas.drawCircle(
         point,
         radius + 3,
-        Paint()
-          ..color =
-              Colors.white.withValues(alpha: 0.92),
+        Paint()..color = Colors.white.withValues(alpha: 0.92),
       );
       canvas.drawCircle(
         point,
@@ -811,15 +832,11 @@ class _RoutePreviewPainter extends CustomPainter {
       );
     }
 
-    for (var index = 0;
-        index < points.length;
-        index++) {
+    for (var index = 0; index < points.length; index++) {
       final isLast = index == points.length - 1;
       drawPoint(
         project(points[index]),
-        isLast
-            ? const Color(0xFFDC2626)
-            : const Color(0xFF0B6CCB),
+        isLast ? const Color(0xFFDC2626) : const Color(0xFF0B6CCB),
         isLast ? 7 : 5,
       );
     }

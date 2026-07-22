@@ -318,8 +318,9 @@ class _BoatMeshPainter extends CustomPainter {
 
     final modelWidth = math.max(maxX - minX, 0.001).toDouble();
     final modelHeight = math.max(maxY - minY, 0.001).toDouble();
-    final scale = math.min(size.width * 0.82 / modelWidth,
-        size.height * 0.67 / modelHeight).toDouble();
+    final scale = math
+        .min(size.width * 0.82 / modelWidth, size.height * 0.67 / modelHeight)
+        .toDouble();
     final centerX = size.width / 2 - (minX + maxX) * scale / 2;
     final centerY = size.height / 2 + 8 + (minY + maxY) * scale / 2;
     final screenX = Float64List(vertexCount);
@@ -372,14 +373,12 @@ class _BoatMeshPainter extends CustomPainter {
           (screenY[b] - screenY[a]) * (screenX[c] - screenX[a]);
       if (area.abs() < 0.08) continue;
 
-      final light = ((nx * -0.34 + ny * 0.78 + nz * 0.53) / normalLength)
-          .abs();
+      final light = ((nx * -0.34 + ny * 0.78 + nz * 0.53) / normalLength).abs();
       final brightness = 0.34 + 0.66 * light;
       final red = (32 * brightness + 8).clamp(0, 255).round();
       final green = (168 * brightness + 10).clamp(0, 255).round();
       final blue = (238 * brightness + 14).clamp(0, 255).round();
-      final color =
-          (0xFF000000 | red << 16 | green << 8 | blue).toSigned(32);
+      final color = (0xFF000000 | red << 16 | green << 8 | blue).toSigned(32);
       projected.add(
         _ProjectedTriangle(a, b, c, (az + bz + cz) / 3, color),
       );

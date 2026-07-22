@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -11,46 +12,95 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+class _MinervaHttpClient extends http.BaseClient {
+  _MinervaHttpClient(this._inner, this._baseUrl);
+
+  final http.Client _inner;
+  final String _baseUrl;
+
+  static const _timeout = Duration(seconds: 8);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    try {
+      return await _inner.send(request).timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException(
+        'A API não respondeu em 8 segundos. '
+        'Ligue a pilha Minerva e use $_baseUrl.',
+      );
+    } on http.ClientException catch (error) {
+      throw ApiException(
+        'Não foi possível alcançar a API em $_baseUrl. '
+        'Detalhe: ${error.message}',
+      );
+    }
+  }
+
+  @override
+  void close() => _inner.close();
+}
+
 class ApiClient {
   ApiClient({required String baseUrl, required this.token, http.Client? client})
       : baseUrl = baseUrl.replaceFirst(RegExp(r'/$'), ''),
-        _client = client ?? http.Client();
+        _client = _MinervaHttpClient(
+          client ?? http.Client(),
+          baseUrl.replaceFirst(RegExp(r'/$'), ''),
+        );
 
   final String baseUrl;
   final String token;
   final http.Client _client;
 
   Map<String, String> get _headers => {'Authorization': 'Bearer $token'};
-  Map<String, String> get _jsonHeaders => {..._headers, 'Content-Type': 'application/json'};
+  Map<String, String> get _jsonHeaders =>
+      {..._headers, 'Content-Type': 'application/json'};
 
   Future<UserProfile> me() async {
-    final response = await _client.get(Uri.parse('$baseUrl/v1/me'), headers: _headers);
-    return UserProfile.fromJson((_decode(response) as Map).cast<String, dynamic>());
+    final response =
+        await _client.get(Uri.parse('$baseUrl/v1/me'), headers: _headers);
+    return UserProfile.fromJson(
+        (_decode(response) as Map).cast<String, dynamic>());
   }
 
   Future<List<BoatSummary>> boats() async {
-    final response = await _client.get(Uri.parse('$baseUrl/v1/boats'), headers: _headers);
+    final response =
+        await _client.get(Uri.parse('$baseUrl/v1/boats'), headers: _headers);
     final decoded = _decode(response) as List<dynamic>;
-    return decoded.map((value) => BoatSummary.fromJson((value as Map).cast<String, dynamic>())).toList();
+    return decoded
+        .map((value) =>
+            BoatSummary.fromJson((value as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   Future<Telemetry> latest(String boatId) async {
-    final response = await _client.get(Uri.parse('$baseUrl/v1/boats/$boatId/latest'), headers: _headers);
-    return Telemetry.fromJson((_decode(response) as Map).cast<String, dynamic>());
+    final response = await _client
+        .get(Uri.parse('$baseUrl/v1/boats/$boatId/latest'), headers: _headers);
+    return Telemetry.fromJson(
+        (_decode(response) as Map).cast<String, dynamic>());
   }
 
   Future<List<Telemetry>> samples(String boatId, {int limit = 500}) async {
-    final uri = Uri.parse('$baseUrl/v1/boats/$boatId/samples').replace(queryParameters: {'limit': '$limit'});
+    final uri = Uri.parse('$baseUrl/v1/boats/$boatId/samples')
+        .replace(queryParameters: {'limit': '$limit'});
     final response = await _client.get(uri, headers: _headers);
     final decoded = _decode(response) as List<dynamic>;
-    return decoded.map((value) => Telemetry.fromJson((value as Map).cast<String, dynamic>())).toList();
+    return decoded
+        .map((value) =>
+            Telemetry.fromJson((value as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   Future<List<Mission>> missions(String boatId) async {
-    final uri = Uri.parse('$baseUrl/v1/missions').replace(queryParameters: {'boat_id': boatId});
+    final uri = Uri.parse('$baseUrl/v1/missions')
+        .replace(queryParameters: {'boat_id': boatId});
     final response = await _client.get(uri, headers: _headers);
     final decoded = _decode(response) as List<dynamic>;
-    return decoded.map((value) => Mission.fromJson((value as Map).cast<String, dynamic>())).toList();
+    return decoded
+        .map(
+            (value) => Mission.fromJson((value as Map).cast<String, dynamic>()))
+        .toList();
   }
 
   Future<Mission> createMission({
@@ -75,7 +125,9 @@ class ApiClient {
   }
 
   Future<Mission> activateMission(String missionId) async {
-    final response = await _client.post(Uri.parse('$baseUrl/v1/missions/$missionId/activate'), headers: _headers);
+    final response = await _client.post(
+        Uri.parse('$baseUrl/v1/missions/$missionId/activate'),
+        headers: _headers);
     return Mission.fromJson((_decode(response) as Map).cast<String, dynamic>());
   }
 
@@ -113,7 +165,9 @@ class ApiClient {
   }
 
   Future<RouteRecording?> activeRecording(String boatId) async {
-    final response = await _client.get(Uri.parse('$baseUrl/v1/boats/$boatId/recordings/active'), headers: _headers);
+    final response = await _client.get(
+        Uri.parse('$baseUrl/v1/boats/$boatId/recordings/active'),
+        headers: _headers);
     final decoded = _decode(response);
     if (decoded == null) return null;
     return RouteRecording.fromJson((decoded as Map).cast<String, dynamic>());
@@ -128,7 +182,8 @@ class ApiClient {
       headers: _jsonHeaders,
       body: jsonEncode({'name': name}),
     );
-    return RouteRecording.fromJson((_decode(response) as Map).cast<String, dynamic>());
+    return RouteRecording.fromJson(
+        (_decode(response) as Map).cast<String, dynamic>());
   }
 
   Future<Mission> stopRecording(String recordingId) async {
@@ -137,12 +192,14 @@ class ApiClient {
       headers: _headers,
     );
     final decoded = (_decode(response) as Map).cast<String, dynamic>();
-    return Mission.fromJson((decoded['mission'] as Map).cast<String, dynamic>());
+    return Mission.fromJson(
+        (decoded['mission'] as Map).cast<String, dynamic>());
   }
 
   dynamic _decode(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException('Servidor respondeu ${response.statusCode}: ${response.body}');
+      throw ApiException(
+          'Servidor respondeu ${response.statusCode}: ${response.body}');
     }
     if (response.bodyBytes.isEmpty) return null;
     return jsonDecode(utf8.decode(response.bodyBytes));

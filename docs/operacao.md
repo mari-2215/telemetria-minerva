@@ -9,7 +9,7 @@ pip install -e ".[dev]"
 pytest
 
 export MINERVA_DEVICE_TOKEN=dev-device-token
-export MINERVA_ACCESS_TOKENS_JSON='{"capitao-minerva-2026":{"name":"Capitã","role":"captain"},"tripulacao-minerva-2026":{"name":"Tripulação","role":"crew"},"dev-viewer-token":{"name":"Desenvolvimento","role":"admin"}}'
+source ~/.config/minerva/access.env
 export MINERVA_CHIRPSTACK_TOKEN=dev-chirpstack-token
 minerva-api
 ```
@@ -83,3 +83,16 @@ No primeiro acesso, informar a URL da API e o token correspondente ao perfil. Pa
 - guardar o `outbox.db` de cada ensaio ate validar a sincronizacao;
 - exportar dados e logs por numero do ensaio e commit do software;
 - nunca incluir tokens, AppKeys ou bancos com credenciais no repositorio.
+
+
+## Autenticação por QR Code
+
+O aplicativo aceita QR Codes `minerva://login` com servidor e credencial.
+As credenciais são geradas fora do repositório e não devem ser publicadas.
+
+```bash
+source ~/.config/minerva/access.env
+minerva-api
+```
+
+Os QR Codes ficam em `~/Downloads/minerva-access-qr/`.

@@ -22,16 +22,14 @@ class MissionPlannerScreen extends StatefulWidget {
   final LatLng? initialPosition;
 
   @override
-  State<MissionPlannerScreen> createState() =>
-      _MissionPlannerScreenState();
+  State<MissionPlannerScreen> createState() => _MissionPlannerScreenState();
 }
 
 class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   final _name = TextEditingController(text: 'Rota de prova');
   final List<LatLng> _points = [];
 
-  late Future<List<Mission>> _missions =
-      widget.client.missions(widget.boatId);
+  late Future<List<Mission>> _missions = widget.client.missions(widget.boatId);
 
   _PlannerView _view = _PlannerView.library;
   Mission? _selectedMission;
@@ -40,8 +38,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   bool _busy = false;
   String? _error;
 
-  double get _effectiveThrottle =>
-      _strategy == 'best_time' ? 1.0 : _throttle;
+  double get _effectiveThrottle => _strategy == 'best_time' ? 1.0 : _throttle;
 
   @override
   void dispose() {
@@ -86,8 +83,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   Future<void> _saveDraft() async {
     if (_points.isEmpty || _name.text.trim().isEmpty) {
       setState(
-        () => _error =
-            'Dê um nome e marque pelo menos um destino no mapa.',
+        () => _error = 'Dê um nome e marque pelo menos um destino no mapa.',
       );
       return;
     }
@@ -147,8 +143,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
         strategy: _strategy,
         cruiseThrottle: _effectiveThrottle,
       );
-      final activated =
-          await widget.client.activateMission(configured.id);
+      final activated = await widget.client.activateMission(configured.id);
       if (!mounted) return;
       Navigator.of(context).pop(activated);
     } catch (error) {
@@ -448,8 +443,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                           '${_statusLabel(mission)}',
                         ),
                         isThreeLine: true,
-                        trailing:
-                            const Icon(Icons.chevron_right_rounded),
+                        trailing: const Icon(Icons.chevron_right_rounded),
                       ),
                     ),
                   ),
@@ -510,8 +504,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                       divisions: 14,
                       label: '${(_throttle * 100).round()}%',
                       onChanged: enabled
-                          ? (value) =>
-                              setState(() => _throttle = value)
+                          ? (value) => setState(() => _throttle = value)
                           : null,
                     ),
                   ],
@@ -589,8 +582,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
-                  onPressed:
-                      _busy ? null : () => _confirmDelete(mission),
+                  onPressed: _busy ? null : () => _confirmDelete(mission),
                   icon: const Icon(Icons.delete_outline_rounded),
                   label: const Text('Apagar esta rota'),
                 ),
@@ -612,8 +604,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
   }
 
   Widget _createView() {
-    final center =
-        widget.initialPosition ?? const LatLng(-26.3044, -48.8464);
+    final center = widget.initialPosition ?? const LatLng(-26.3044, -48.8464);
     final routePolylines = buildRoutePowerPolylines(
       waypoints: _points,
       currentPosition: widget.initialPosition,
@@ -653,8 +644,7 @@ class _MissionPlannerScreenState extends State<MissionPlannerScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _name,
-                  decoration:
-                      const InputDecoration(labelText: 'Nome da rota'),
+                  decoration: const InputDecoration(labelText: 'Nome da rota'),
                 ),
                 const SizedBox(height: 14),
                 _executionModeSelector(enabled: true),

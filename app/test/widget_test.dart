@@ -11,7 +11,8 @@ void main() {
 
     final logo = tester.widget<Image>(find.byType(Image));
     expect(logo.image, isA<AssetImage>());
-    expect((logo.image as AssetImage).assetName, 'assets/images/minerva_nautica.png');
+    expect((logo.image as AssetImage).assetName,
+        'assets/images/minerva_nautica.png');
     expect(logo.semanticLabel, 'Minerva Náutica');
   });
 

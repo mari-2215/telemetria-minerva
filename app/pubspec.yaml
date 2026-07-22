@@ -13,12 +13,14 @@ dependencies:
   http: ^1.5.0
   latlong2: ^0.9.1
   shared_preferences: ^2.5.3
+  mobile_scanner: ^7.4.0
   url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
@@ -29,4 +31,20 @@ flutter:
   assets:
     - assets/fonts/OFL-Manrope.txt
     - assets/images/minerva_nautica.png
+    - assets/images/minerva_app_icon.png
+    - assets/images/minerva_app_icon_foreground.png
+    - assets/manuals/
     - assets/models/minerva_tug.mesh
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/images/minerva_app_icon.png
+  adaptive_icon_background: "#05084A"
+  adaptive_icon_foreground: assets/images/minerva_app_icon_foreground.png
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: assets/images/minerva_app_icon.png
+    background_color: "#05084A"
+    theme_color: "#05084A"

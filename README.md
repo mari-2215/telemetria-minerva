@@ -96,3 +96,19 @@ A distribuicao para iPhone exige assinatura Apple. O caminho recomendado para a 
 ## Modelo 3D
 
 O painel de atitude usa uma malha 3D compacta derivada do [MİNİ 10 TUGBOAT](https://grabcad.com/library/mini-10-tugboat-1), de Altug Tuncel / Berkeley Engineering. Ela é renderizada diretamente pelo Flutter, sem navegador embutido e sem depender de internet. Veja os detalhes em [docs/ATRIBUICOES.md](docs/ATRIBUICOES.md).
+
+
+## Manuais operacionais
+
+- [Azimutal — procedimentos](docs/manual-azimutal-procedimentos.md)
+- [Azimutal — conservação](docs/manual-azimutal-conservacao.md)
+- [Netuno — procedimentos](docs/manual-netuno-procedimentos.md)
+- [Netuno — conservação](docs/manual-netuno-conservacao.md)
+
+Os mesmos documentos estão disponíveis dentro do aplicativo em **Manuais**.
+
+## Execução local sem CORS
+
+Execute `./scripts/run_local_stack.sh`. O aplicativo e a API ficam na mesma
+origem: o app abre em `http://127.0.0.1:8765` e acessa a API pelo caminho
+`http://127.0.0.1:8765/api`, encaminhado internamente para a porta 8080.
